@@ -1524,8 +1524,8 @@ If KEEP-IN-HISTORY, don't mark to ignore it."
         (space-str (make-string space-count ?\s)))
     (mapconcat (lambda (row)
                  (format (format "%%-%ds%s%%s\n%%-%ds%s%%s"
-                                 first-col-width space-str
-                                 first-col-width space-str)))
+                                 first-col-width space-str first-col-width space-str)
+                         (nth 0 row) (nth 1 row) "" (nth 2 row)))
                rows "\n\n")))
 
 (defun shell-maker-align-columns (rows)
