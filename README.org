@@ -1,0 +1,33 @@
+* Shell-maker
+
+=shell-maker= is a convenience wrapper around [[https://www.gnu.org/software/emacs/manual/html_node/emacs/Shell-Prompts.html][comint mode]].
+
+Both [[https://github.com/xenodium/chatgpt-shell][chatgpt-shell]] and [[https://github.com/xenodium/chatgpt-shell][dall-e-shell]] are based on =shell-maker=.
+
+A basic shell implementation looks as follows:
+
+#+begin_src emacs-lisp :lexical no
+  (require 'map)
+  (require 'shell-maker)
+
+  (defvar greeter-shell--config
+    (make-shell-maker-config
+     :name "Greeter"
+     :execute-command
+     (lambda (command shell)
+       ;; Output chunk 1
+       (funcall (map-elt shell :write-output)
+                (format "Hello \"%s\"\n" command))
+
+       ;; Output chunk 2
+       (funcall (map-elt shell :write-output)
+                (format "Hi \"%s\"" command))
+
+       ;; Finish output (t = success)
+       (funcall (map-elt shell :finish-output) t))))
+
+  (defun greeter-shell ()
+    "Start a Greeter shell."
+    (interactive)
+    (shell-maker-start greeter-shell--config))
+#+end_src
