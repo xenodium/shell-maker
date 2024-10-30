@@ -88,7 +88,7 @@ As a function, so it can also logic to generate a name.
 For example:
 
 \(lambda ()
-    (format-time-string \"%Y-%m-%d-%H:%M:%S-transcript.txt\"))"
+    (format-time-string \"%F-%T-transcript.txt\"))"
   :type 'function
   :group 'shell-maker)
 
@@ -895,7 +895,7 @@ and TIMEOUT: defaults to 600ms."
                   "--fail-with-body"
                   "--no-progress-meter"
                   "-m" (number-to-string timeout))
-            (apply 'append
+            (apply #'append
                    (mapcar (lambda (header)
                              (list "-H" header))
                            headers))
@@ -1162,7 +1162,7 @@ ERROR-CALLBACK accordingly."
     (with-current-buffer (get-buffer-create (format "*%s-log*"
                                                     (shell-maker-process-name config)))
       (goto-char (point-max))
-      (insert (concat "\n" (format-time-string "%Y-%m-%dT%H:%M:%S") ": " format)))))
+      (insert "\n" (format-time-string "%Y:%T") ": " format))))
 
 (defun shell-maker--temp-file (&rest components)
   "Create temp file path for COMPONENTS."
@@ -1531,7 +1531,7 @@ If KEEP-IN-HISTORY, don't mark to ignore it."
   "Align columns in ROWS."
   (let* ((columns (length (car rows)))
          (max-widths (cl-mapcar (lambda (column)
-                                  (apply 'max
+                                  (apply #'max
                                          (mapcar (lambda (row)
                                                    (length (format "%s" (nth column row))))
                                                  rows)))
@@ -1541,7 +1541,7 @@ If KEEP-IN-HISTORY, don't mark to ignore it."
                  (format "%%-%ds" w))
                max-widths "   ")))
     (mapconcat
-     (lambda (row) (apply 'format fmt row))
+     (lambda (row) (apply #'format fmt row))
      rows "\n")))
 
 (defun shell-maker--make-ret-binding-map (fun)
