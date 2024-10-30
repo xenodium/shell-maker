@@ -38,6 +38,8 @@
 (require 'shell)
 (require 'view)
 
+(declare-function closurep "src/data.c")
+
 (eval-when-compile
   (require 'cl-lib)
   (declare-function json-pretty-print "ext:json" (begin end &optional minimize)))
