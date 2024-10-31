@@ -4,7 +4,7 @@
 
 ;; Author: Alvaro Ramirez https://xenodium.com
 ;; URL: https://github.com/xenodium/chatgpt-shell
-;; Version: 0.59.1
+;; Version: 0.60.1
 ;; Package-Requires: ((emacs "27.1"))
 
 ;; This package is free software; you can redistribute it and/or modify
@@ -808,6 +808,7 @@ ON-FINISHED: A function to notify when command is finished.
                       :filter (lambda (_process raw-output)
                                 (log "Stderr")
                                 (log raw-output)
+                                (setq output (concat output raw-output))
                                 (with-current-buffer shell-buffer
                                   (when on-output
                                     (funcall on-output (concat "\n" (string-trim raw-output))))))
