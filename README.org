@@ -15,15 +15,8 @@ A basic shell implementation looks as follows:
      :name "Greeter"
      :execute-command
      (lambda (command shell)
-       ;; Output chunk 1
        (funcall (map-elt shell :write-output)
-                (format "Hello \"%s\"\n" command))
-
-       ;; Output chunk 2
-       (funcall (map-elt shell :write-output)
-                (format "Hi \"%s\"" command))
-
-       ;; Finish output (t = success)
+                (format "Hello \"%s\"." command))
        (funcall (map-elt shell :finish-output) t))))
 
   (defun greeter-shell ()
@@ -31,3 +24,34 @@ A basic shell implementation looks as follows:
     (interactive)
     (shell-maker-start greeter-shell--config))
 #+end_src
+
+#+HTML: <img src="https://raw.githubusercontent.com/xenodium/chatgpt-shell/main/demos/sofia.gif" width="50%" />
+
+Invoke =shell='s :write-output as many times as needed to stream responses.
+
+#+begin_src emacs-lisp :lexical no
+  (require 'map)
+  (require 'shell-maker)
+
+  (defvar greeter-shell--config
+    (make-shell-maker-config
+     :name "Greeter"
+     :execute-command
+     (lambda (command shell)
+       (mapc (lambda (char)
+               (sit-for 0.008)
+               (funcall (map-elt shell :write-output)
+                        (format "%c" char)))
+             (format "Hello \"%s\". Nice to see you again!
+
+  It's been %d days since I last saw you."
+                     command (random 30)))
+       (funcall (map-elt shell :finish-output) t))))
+
+  (defun greeter-shell ()
+    "Start a Greeter shell."
+    (interactive)
+    (shell-maker-start greeter-shell--config))
+#+end_src
+
+#+HTML: <img src="https://raw.githubusercontent.com/xenodium/chatgpt-shell/main/demos/sofia-stream.gif" width="50%" />
