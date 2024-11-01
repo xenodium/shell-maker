@@ -25,7 +25,7 @@ A basic shell implementation looks as follows:
     (shell-maker-start greeter-shell--config))
 #+end_src
 
-#+HTML: <img src="https://raw.githubusercontent.com/xenodium/shell-maker/main/demos/sofia.gif" width="50%" />
+#+HTML: <img src="https://raw.githubusercontent.com/xenodium/shell-maker/main/demos/sofia.gif" width="80%" />
 
 Invoke =shell='s :write-output as many times as needed to stream responses.
 
@@ -54,4 +54,4 @@ Invoke =shell='s :write-output as many times as needed to stream responses.
     (shell-maker-start greeter-shell--config))
 #+end_src
 
-#+HTML: <img src="https://raw.githubusercontent.com/xenodium/shell-maker/main/demos/sofia-stream.gif" width="50%" />
+#+HTML: <img src="https://raw.githubusercontent.com/xenodium/shell-maker/main/demos/sofia-stream.gif" width="80%" />
