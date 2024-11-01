@@ -1535,8 +1535,7 @@ If KEEP-IN-HISTORY, don't mark to ignore it."
   (let ((map (make-sparse-keymap)))
     (define-key map (kbd "RET") fun)
     (define-key map [mouse-1] fun)
-    (define-key map [remap self-insert-command]
-      'ignore)
+    (define-key map [remap self-insert-command] 'ignore)
     map))
 
 (defun shell-maker--actionable-text (text fun)
