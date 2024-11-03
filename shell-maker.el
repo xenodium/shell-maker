@@ -709,12 +709,16 @@ Return filtered response."
     (setq filter #'identity))
   (with-temp-buffer
     (let* ((buffer (current-buffer))
-           (exit-status (apply #'call-process (seq-first command) nil buffer nil (cdr command)))
+           (stderr-file (make-temp-file "stderr-"))
+           (exit-status (apply #'call-process (seq-first command) nil (list buffer stderr-file) nil (cdr command)))
            (data (buffer-substring-no-properties (point-min) (point-max)))
            (filtered (funcall filter data))
            (text (or (map-elt filtered :filtered)
                      (map-elt filtered :pending)
                      filtered
+                     (with-temp-buffer
+                       (insert-file-contents stderr-file)
+                       (string-trim (buffer-string)))
                      "")))
       (list
        :exit-status exit-status
