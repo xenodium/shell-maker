@@ -721,8 +721,8 @@ Return filtered response."
                        (string-trim (buffer-string)))
                      "")))
       (list
-       :exit-status exit-status
-       :output text))))
+       (cons :exit-status exit-status)
+       (cons :output text)))))
 
 (cl-defun shell-maker--execute-command-async (&key command filter on-output on-finished log)
   "Execute COMMAND list (command + params) asynchronously.
