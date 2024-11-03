@@ -825,7 +825,8 @@ LOG: A function to log to.
                                                        (cons :output output)))))
                            (error
                             (when on-output
-                              (funcall on-output (format "\n\n%s" err)))))))))))
+                              (funcall on-output (format "\n\n%s" err))))))))
+      shell-maker--request-process)))
 
 (cl-defun shell-maker-make-http-request (&key async url data encoding timeout
                                               headers filter on-output on-finished shell)
