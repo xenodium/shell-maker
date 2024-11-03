@@ -821,8 +821,8 @@ LOG: A function to log to.
                                (log "Exit status: %d" exit-status)
                                (when on-finished
                                  (funcall on-finished (list
-                                                       :exit-status exit-status
-                                                       :output output))))
+                                                       (cons :exit-status exit-status)
+                                                       (cons :output output)))))
                            (error
                             (when on-output
                               (funcall on-output (format "\n\n%s" err)))))))))))
