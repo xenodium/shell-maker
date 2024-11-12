@@ -1,4 +1,4 @@
-* Shell-maker
+* shell-maker
 
 =shell-maker= is a convenience wrapper around [[https://www.gnu.org/software/emacs/manual/html_node/emacs/Shell-Prompts.html][comint mode]].
 
