@@ -55,3 +55,28 @@ Invoke =shell='s :write-output as many times as needed to stream responses.
 #+end_src
 
 #+HTML: <img src="https://raw.githubusercontent.com/xenodium/shell-maker/main/demos/sofia-stream.gif" width="80%" />
+
+* Support my work
+
+👉 Find my work useful? [[https://github.com/sponsors/xenodium][Support this work via GitHub Sponsors]] or [[https://apps.apple.com/us/developer/xenodium-ltd/id304568690][buy my iOS apps]].
+
+* My other utilities, packages, apps, writing...
+
+- [[https://xenodium.com/][Blog (xenodium.com)]]
+- [[https://lmno.lol/alvaro][Blog (lmno.lol/alvaro)]]
+- [[https://plainorg.com][Plain Org]] (iOS)
+- [[https://flathabits.com][Flat Habits]] (iOS)
+- [[https://apps.apple.com/us/app/scratch/id1671420139][Scratch]] (iOS)
+- [[https://github.com/xenodium/macosrec][macosrec]] (macOS)
+- [[https://apps.apple.com/us/app/fresh-eyes/id6480411697?mt=12][Fresh Eyes]] (macOS)
+- [[https://github.com/xenodium/dwim-shell-command][dwim-shell-command]] (Emacs)
+- [[https://github.com/xenodium/company-org-block][company-org-block]] (Emacs)
+- [[https://github.com/xenodium/org-block-capf][org-block-capf]] (Emacs)
+- [[https://github.com/xenodium/ob-swiftui][ob-swiftui]] (Emacs)
+- [[https://github.com/xenodium/chatgpt-shell][chatgpt-shell]] (Emacs)
+- [[https://github.com/xenodium/ready-player][ready-player]] (Emacs)
+- [[https://github.com/xenodium/sqlite-mode-extras][sqlite-mode-extras]]
+- [[https://github.com/xenodium/ob-chatgpt-shell][ob-chatgpt-shell]] (Emacs)
+- [[https://github.com/xenodium/dall-e-shell][dall-e-shell]] (Emacs)
+- [[https://github.com/xenodium/ob-dall-e-shell][ob-dall-e-shell]] (Emacs)
+- [[https://github.com/xenodium/shell-maker][shell-maker]] (Emacs)
