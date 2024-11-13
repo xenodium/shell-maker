@@ -5,7 +5,7 @@
 For related packages, see:
 
 - [[https://github.com/xenodium/dall-e-shell][dall-e-shell]]: An Emacs shell for OpenAI's DALL-E.
-- [[https://github.com/xenodium/chatgpt-shell][dall-e-shell]]: An Emacs shell for OpenAI's ChatGPT.
+- [[https://github.com/xenodium/chatgpt-shell][chatgpt-shell]]: An Emacs shell for OpenAI's ChatGPT.
 
 A basic shell implementation looks as follows:
 
