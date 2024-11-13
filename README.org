@@ -2,7 +2,10 @@
 
 =shell-maker= is a convenience wrapper around [[https://www.gnu.org/software/emacs/manual/html_node/emacs/Shell-Prompts.html][comint mode]].
 
-Both [[https://github.com/xenodium/chatgpt-shell][chatgpt-shell]] and [[https://github.com/xenodium/chatgpt-shell][dall-e-shell]] are based on =shell-maker=.
+For related packages, see:
+
+- [[https://github.com/xenodium/dall-e-shell][dall-e-shell]]: An Emacs shell for OpenAI's DALL-E.
+- [[https://github.com/xenodium/chatgpt-shell][dall-e-shell]]: An Emacs shell for OpenAI's ChatGPT.
 
 A basic shell implementation looks as follows:
 
