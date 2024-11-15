@@ -755,10 +755,14 @@ LOG: A function to log to.
   (unless log
     (error "Missing mandatory :log param"))
   (let* ((process-name (make-temp-name "shell-maker--execute-command-async-"))
+         (logs)
          (output)
          (pending))
-    (cl-flet ((log (format &rest args)
-                (apply log (append (list format) args))))
+    (cl-flet ((flush-logs ()
+                (apply log (list logs)))
+              (log (format &rest args)
+                (when format
+                  (setq logs (concat logs (apply #'format (append (list format) args)) "\n")))))
       (log "Async Command v2")
       (log "%s" command)
       (setq shell-maker--request-process
@@ -823,7 +827,8 @@ LOG: A function to log to.
                                (when on-finished
                                  (funcall on-finished (list
                                                        (cons :exit-status exit-status)
-                                                       (cons :output output)))))
+                                                       (cons :output output))))
+                               (flush-logs))
                            (error
                             (when on-output
                               (funcall on-output (format "\n\n%s" err))))))))
@@ -1193,7 +1198,7 @@ ERROR-CALLBACK accordingly."
     (with-current-buffer (get-buffer-create (format "*%s-log*"
                                                     (shell-maker-process-name config)))
       (goto-char (point-max))
-      (insert "\n" (format-time-string "%Y:%T") ": " format))))
+      (insert format))))
 
 (defun shell-maker--temp-file (&rest components)
   "Create temp file path for COMPONENTS."
