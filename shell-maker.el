@@ -147,7 +147,7 @@ For example:
        (with-temp-buffer ,@body)
      ,@body))
 
-(defun shell-maker-start (config &optional no-focus welcome-function new-session buffer-name)
+(defun shell-maker-start (config &optional no-focus welcome-function new-session buffer-name mode-line-name)
   "Start a shell with CONFIG.
 
 Specify NO-FOCUS if started shell should not be focused.
@@ -156,7 +156,9 @@ Set WELCOME-FUNCTION to create and show a welcome message.
 
 Set NEW-SESSION to start a new session.
 
-Set BUFFER-NAME to override the buffer name."
+Set BUFFER-NAME to override the buffer name.
+
+Set MODE-LINE-NAME to override the mode line name."
   (shell-maker--with-temp-buffer-if new-session ;; Avoid picking up buffer-local vars from current buffer
     (let* ((old-point)
            (namespace (downcase (shell-maker-config-name config)))
@@ -180,7 +182,7 @@ Set BUFFER-NAME to override the buffer name."
       (eval
        (macroexpand
         `(define-derived-mode ,(shell-maker-major-mode config) comint-mode
-           ,(shell-maker-config-name config)
+           ,(or mode-line-name (shell-maker-config-name config))
            ,(format "Major mode for %s shell." (shell-maker-config-name config))
            (define-key ,(shell-maker-major-mode-map config)
                        [remap comint-send-input] 'shell-maker-submit)
