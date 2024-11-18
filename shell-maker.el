@@ -777,12 +777,12 @@ LOG: A function to log to.
                        (condition-case err
                            (progn
                              (log "Filter pending")
-                             (log pending)
+                             (log "%s" pending)
                              (log "Filter output")
-                             (log raw-output)
+                             (log "%s" raw-output)
                              (setq raw-output (concat pending raw-output))
                              (log "Filter combined")
-                             (log raw-output)
+                             (log "%s" raw-output)
                              (let ((filtered (funcall filter raw-output)))
                                (map-elt filtered :filtered)
                                (cond ((null filtered)
@@ -816,7 +816,7 @@ LOG: A function to log to.
                       :name (concat process-name "-stderr")
                       :filter (lambda (_process raw-output)
                                 (log "Stderr")
-                                (log raw-output)
+                                (log "%s" raw-output)
                                 (setq output (concat output raw-output))
                                 (when on-output
                                   (funcall on-output (concat "\n" (string-trim raw-output)))))
