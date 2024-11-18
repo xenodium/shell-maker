@@ -4,7 +4,7 @@
 
 ;; Author: Alvaro Ramirez https://xenodium.com
 ;; URL: https://github.com/xenodium/chatgpt-shell
-;; Version: 0.64.1
+;; Version: 0.65.1
 ;; Package-Requires: ((emacs "27.1"))
 
 ;; This package is free software; you can redistribute it and/or modify
@@ -631,8 +631,9 @@ With prefix TREAT-AS-FAILURE, mark as failed."
                                               'invisible (not shell-maker--show-invisible-markers))))
     (when (process-live-p shell-maker--request-process)
       (kill-process shell-maker--request-process))
-    (message "%s: interrupted!"
-             (shell-maker-config-name shell-maker--config))
+    (when shell-maker--busy
+      (message "%s: interrupted!"
+               (shell-maker-config-name shell-maker--config)))
     (comint-send-input) ;; Sets shell-maker--input
     (shell-maker--output-filter
      (shell-maker--process)
@@ -1124,6 +1125,44 @@ ERROR-CALLBACK accordingly."
   (if (fboundp 'json-serialize)
       (json-serialize obj)
     (json-encode obj)))
+
+(defun shell-maker--split-text (text)
+  "Splits TEXT text into chunks.
+
+RESPONSE is of the form:
+
+\"
+data: text1
+data: text2
+text3
+\"
+
+returned list is of the form:
+
+  (((:key . \"data:\")
+    (:value . \"text1\"))
+   ((:key . \"data:\")
+    (:value . \"text2\"))
+   ((:key . nil)
+    (:value . \"text3\")))"
+  (if (string-prefix-p "{" text) ;; starts with { keep whole.
+      (list `((:key . nil)
+              (:value . ,text)))
+    (let ((lines (split-string text "\n"))
+          (result '()))
+      (dolist (line lines)
+        (if (string-match (rx (group (+ (not (any " " ":"))) ":")
+                              (group (* nonl)))
+                          line)
+            (let* ((key (match-string 1 line))
+                   (value (string-trim (match-string 2 line))))
+              (push (list (cons :key key)
+                          (cons :value value)) result))
+          (when-let* ((value (string-trim line))
+                      (non-empty (not (string-empty-p value))))
+            (push (list (cons :key nil)
+                        (cons :value value)) result))))
+      (reverse result))))
 
 (defun shell-maker--curl-version-supported ()
   "Return t if curl version is 7.76 or newer, nil otherwise."
@@ -1696,7 +1735,6 @@ Of the form:
                                                                               (shell-maker--current-request-id))))))
                                        (with-current-buffer shell-buffer
                                          (setq shell-maker--busy nil)
-                                         (message "Looking: [%s]" (buffer-substring-no-properties (- (point) 20) (point)))
                                          (shell-maker--write-reply config (save-excursion
                                                                             (goto-char (point-max))
                                                                             ;; Command output may have ended in newlines.
