@@ -1199,7 +1199,7 @@ returned list is of the form:
     ;; TODO: Remove and rely on preprocess-response
     ;; from `shell-maker-async-shell-command'.
     (setq json (replace-regexp-in-string (rx bol "data:") "" json))
-    (with-temp-buffer ;; with-current-buffer (get-buffer-create "*preparse*")
+    (with-temp-buffer
       (erase-buffer)
       (insert json)
       (goto-char (point-min))
