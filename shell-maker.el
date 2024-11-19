@@ -4,7 +4,7 @@
 
 ;; Author: Alvaro Ramirez https://xenodium.com
 ;; URL: https://github.com/xenodium/chatgpt-shell
-;; Version: 0.67.1
+;; Version: 0.68.1
 ;; Package-Requires: ((emacs "27.1"))
 
 ;; This package is free software; you can redistribute it and/or modify
@@ -179,6 +179,7 @@ Set MODE-LINE-NAME to override the mode line name."
       (fset (intern (concat namespace "-shell-newline")) #'newline)
       (fset (intern (concat namespace "-shell-rename-buffer")) #'shell-maker-rename-buffer)
       (fset (intern (concat namespace "-shell-delete-interaction-at-point")) #'shell-maker-delete-interaction-at-point)
+      (fset (intern (concat namespace "-shell-restore-session-from-transcript")) #'shell-maker-restore-session-from-transcript)
       (eval
        (macroexpand
         `(define-derived-mode ,(shell-maker-major-mode config) comint-mode
@@ -1256,9 +1257,7 @@ returned list is of the form:
   (get-buffer-process (shell-maker-buffer shell-maker--config)))
 
 (defun shell-maker-save-session-transcript ()
-  "Save shell transcript to file.
-
-Very much EXPERIMENTAL."
+  "Save shell transcript to file."
   (interactive)
   (unless (eq major-mode (shell-maker-major-mode shell-maker--config))
     (user-error "Not in a shell"))
@@ -1279,6 +1278,66 @@ Very much EXPERIMENTAL."
         (write-file path t))
       (setq shell-maker--file path)
       (set-buffer-modified-p nil))))
+
+(defun shell-maker-restore-session-from-transcript ()
+  "Restore session from transcript."
+  (interactive)
+  (unless (eq major-mode (shell-maker-major-mode shell-maker--config))
+    (user-error "Not in a shell"))
+  (let* ((dir (when shell-maker-transcript-default-path
+                (file-name-as-directory shell-maker-transcript-default-path)))
+         (path (read-file-name "Restore from: " dir nil t))
+         (config shell-maker--config)
+         (history (with-temp-buffer
+                    (insert-file-contents path)
+                    (shell-maker--extract-history
+                     (buffer-string) (shell-maker-prompt-regexp config))))
+         (execute-command (shell-maker-config-execute-command
+                           config))
+         (validate-command (shell-maker-config-validate-command
+                            config))
+         (entry)
+         (failed))
+    ;; Momentarily overrides request handling to replay all commands
+    ;; read from file so comint treats all commands/outputs like
+    ;; any other command.
+    (unwind-protect
+        (progn
+          (setf (shell-maker-config-validate-command config) nil)
+          (setf (shell-maker-config-execute-command config)
+                (lambda (_command shell)
+                  (when entry
+                    (unless (consp entry)
+                      (setq failed t)
+                      (user-error "Invalid transcript"))
+                    (funcall (map-elt shell :write-output) (cdr entry))
+                    (funcall (map-elt shell :finish-output) t)
+                    (setq entry (car history))
+                    (setq history (cdr history))
+                    (when entry
+                      (goto-char (point-max))
+                      (insert (car entry))
+                      (shell-maker-submit)))))
+          (goto-char (point-max))
+          (comint-clear-buffer)
+          (setq entry (car history))
+          (setq history (cdr history))
+          (when entry
+            (unless (consp entry)
+              (setq failed t)
+              (user-error "Invalid transcript"))
+            (goto-char (point-max))
+            (insert (car entry))
+            (shell-maker-submit)))
+      (if failed
+          (setq shell-maker--file nil)
+        (setq shell-maker--file path))
+      (setq shell-maker--busy nil)
+      (setf (shell-maker-config-validate-command config)
+            validate-command)
+      (setf (shell-maker-config-execute-command config)
+            execute-command)))
+  (goto-char (point-max)))
 
 (defun shell-maker--prompt-end-markers ()
   "Return the location of all \"<shell-maker-end-of-prompt>\" markers.
