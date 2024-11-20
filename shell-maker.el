@@ -38,8 +38,6 @@
 (require 'shell)
 (require 'view)
 
-(declare-function closurep "src/data.c")
-
 (eval-when-compile
   (require 'cl-lib)
   (declare-function json-pretty-print "ext:json" (begin end &optional minimize)))
@@ -347,9 +345,8 @@ Of the form:
   (let* ((shell-buffer (shell-maker-buffer shell-maker--config))
          (called-interactively (called-interactively-p #'interactive))
          (command-handler (shell-maker-config-execute-command shell-maker--config))
-         (is-command-v1 (and (closurep command-handler)
-                             (string-match-p "shell-maker-async-shell-command"
-                                             (format "%s" command-handler))))
+         (is-command-v1 (string-match-p "shell-maker-async-shell-command"
+                                        (format "%s" command-handler)))
          (shell-maker--input))
     (when input
       (with-current-buffer shell-buffer
