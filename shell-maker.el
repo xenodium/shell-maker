@@ -1185,11 +1185,16 @@ returned list is of the form:
 (defun shell-maker--write-partial-reply (config reply)
   "Write partial REPLY to CONFIG shell."
   (let ((inhibit-read-only t)
-        (shell-buffer (shell-maker-buffer config)))
+        (shell-buffer (shell-maker-buffer config))
+        (auto-scroll (eobp)))
     (with-current-buffer shell-buffer
-      (save-excursion
-        (goto-char (point-max))
-        (shell-maker--output-filter (shell-maker--process) reply)))))
+      (if auto-scroll
+          (progn
+            (goto-char (point-max))
+            (shell-maker--output-filter (shell-maker--process) reply))
+        (save-excursion
+          (goto-char (point-max))
+          (shell-maker--output-filter (shell-maker--process) reply))))))
 
 (defun shell-maker--preparse-json (json)
   "Preparse JSON and return a cons of parsed objects vs unparsed text."
