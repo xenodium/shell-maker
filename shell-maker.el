@@ -1245,14 +1245,12 @@ returned list is of the form:
       (insert format))))
 
 (defun shell-maker--temp-file (&rest components)
-  "Create temp file path for COMPONENTS."
-  (let ((temp-dir (apply #' file-name-concat
-                            (append (list
-                                     temporary-file-directory
-                                     "shell-maker")
-                                    components))))
-    (make-directory (file-name-directory temp-dir) t)
-    temp-dir))
+  "Create an absolute temp file path for COMPONENTS."
+  (let* ((components (cons "shell-maker" components))
+         (relative-path (apply #'file-name-concat components))
+         (temp-file (expand-file-name relative-path temporary-file-directory)))
+    (make-directory (file-name-directory temp-file) t)
+    temp-file))
 
 (defun shell-maker--process nil
   "Get shell buffer process."
