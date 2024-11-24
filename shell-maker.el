@@ -1279,19 +1279,21 @@ returned list is of the form:
       (setq shell-maker--file path)
       (set-buffer-modified-p nil))))
 
-(defun shell-maker-restore-session-from-transcript ()
-  "Restore session from transcript."
+(defun shell-maker-restore-session-from-transcript (&optional history)
+  "Restore session from file transcript (or HISTORY)."
   (interactive)
   (unless (eq major-mode (shell-maker-major-mode shell-maker--config))
     (user-error "Not in a shell"))
   (let* ((dir (when shell-maker-transcript-default-path
                 (file-name-as-directory shell-maker-transcript-default-path)))
-         (path (read-file-name "Restore from: " dir nil t))
+         (path (unless history
+                 (read-file-name "Restore from: " dir nil t)))
          (config shell-maker--config)
-         (history (with-temp-buffer
-                    (insert-file-contents path)
-                    (shell-maker--extract-history
-                     (buffer-string) (shell-maker-prompt-regexp config))))
+         (history (or history
+                      (with-temp-buffer
+                        (insert-file-contents path)
+                        (shell-maker--extract-history
+                         (buffer-string) (shell-maker-prompt-regexp config)))))
          (execute-command (shell-maker-config-execute-command
                            config))
          (validate-command (shell-maker-config-validate-command
@@ -1373,6 +1375,20 @@ If BACKWARDS is non-nil, move backwards."
                                    (line-number-at-pos point-after))))))
     (goto-char point-after)
     (shell-maker--command-and-response-at-point)))
+
+(defun shell-maker-history ()
+  "Get all buffer commands along with respective outputs."
+  (unless (eq major-mode (shell-maker-major-mode shell-maker--config))
+    (user-error "Not in a shell"))
+  (shell-maker--extract-history
+   (buffer-string)
+   (shell-maker-prompt-regexp shell-maker--config)))
+
+(cl-defun shell-maker-append-history (&key items)
+  "Append ITEMS to current shell buffer history."
+  (shell-maker-restore-session-from-transcript
+   (append (shell-maker-history)
+           items)))
 
 (defun shell-maker--extract-history (text prompt-regexp)
   "Extract all commands and respective output in TEXT with PROMPT-REGEXP.
