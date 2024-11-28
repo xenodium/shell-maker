@@ -372,9 +372,9 @@ Of the form:
   "Clear the current shell buffer."
   (interactive)
   (when shell-maker-forget-file-after-clear
-
     (setq shell-maker--file nil))
-  (comint-clear-buffer))
+  (when (shell-maker--process)
+    (comint-clear-buffer)))
 
 (defun shell-maker-search-history ()
   "Search previous input history."
