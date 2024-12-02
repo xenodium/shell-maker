@@ -1166,8 +1166,7 @@ returned list is of the form:
 
 (defun shell-maker--curl-version-supported ()
   "Return t if curl version is 7.76 or newer, nil otherwise."
-  (let* ((curl-error-redirect (if (eq system-type (or 'windows-nt 'ms-dos)) "2> NUL" "2>/dev/null"))
-         (curl-version-string (shell-command-to-string (concat "curl --version " curl-error-redirect))))
+  (let ((curl-version-string (shell-command-to-string (concat "curl --version "))))
     (when (string-match "\\([0-9]+\\.[0-9]+\\.[0-9]+\\)" curl-version-string)
       (let ((version (match-string 1 curl-version-string)))
         (version<= "7.76" version)))))
