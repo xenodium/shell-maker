@@ -672,11 +672,16 @@ Return t if INPUT us cleared.  nil otherwise."
             shell-maker--config)
            (funcall (shell-maker-config-validate-command
                      shell-maker--config) input))
-      (shell-maker--write-reply shell-maker--config
-                                (concat "\n"
-                                        (funcall (shell-maker-config-validate-command
-                                                  shell-maker--config) input)
-                                        "\n\n"))
+      (let ((error (concat "\n"
+                           (funcall (shell-maker-config-validate-command
+                                     shell-maker--config) input)
+                           "\n\n")))
+        (shell-maker--write-reply shell-maker--config error)
+        (shell-maker--notify-on-command-finished
+         :config shell-maker--config
+         :input input
+         :output error
+         :success nil))
       (setq shell-maker--busy nil)
       nil)
      ((string-empty-p (string-trim input))
@@ -817,7 +822,7 @@ LOG: A function to log to.
                                 (log "%s" raw-output)
                                 (setq output (concat output raw-output))
                                 (when on-output
-                                  (funcall on-output (concat "\n" (string-trim raw-output)))))
+                                  (funcall on-output (string-trim raw-output))))
                       :sentinel (lambda (process _event)
                                   (kill-buffer (process-buffer process))))
              :sentinel (lambda (process _event)
@@ -1831,22 +1836,30 @@ Of the form:
                                      ;; the shell buffer.
                                      (when on-finished-broadcast
                                        (funcall on-finished-broadcast input full-output success))
-                                     (when (shell-maker-config-on-command-finished config)
-                                       (let* ((params (func-arity (shell-maker-config-on-command-finished config)))
-                                              (params-max (cdr params)))
-                                         (cond ((= params-max 2)
-                                                (funcall (shell-maker-config-on-command-finished config)
-                                                         input
-                                                         full-output))
-                                               ((= params-max 3)
-                                                (funcall (shell-maker-config-on-command-finished config)
-                                                         input
-                                                         full-output
-                                                         success))
-                                               (t
-                                                (message (concat ":on-command-finished expects "
-                                                                 "(lambda (command output)) or "
-                                                                 "(lambda (command output success))"))))))))))))
+                                     (shell-maker--notify-on-command-finished
+                                      :config config
+                                      :input input
+                                      :output full-output
+                                      :success success)))))))
+
+(cl-defun shell-maker--notify-on-command-finished (&key config input output success)
+  "Notify CONFIG's :on-command-finished observer of INPUT, OUTPUT, and SUCCESS."
+  (when (shell-maker-config-on-command-finished config)
+    (let* ((params (func-arity (shell-maker-config-on-command-finished config)))
+           (params-max (cdr params)))
+      (cond ((= params-max 2)
+             (funcall (shell-maker-config-on-command-finished config)
+                      input
+                      output))
+            ((= params-max 3)
+             (funcall (shell-maker-config-on-command-finished config)
+                      input
+                      output
+                      success))
+            (t
+             (message (concat ":on-command-finished expects "
+                              "(lambda (command output)) or "
+                              "(lambda (command output success))")))))))
 
 ;; TODO: Remove in favor of shell-maker--eval-input-on-buffer-v2.
 (cl-defun shell-maker--eval-input-on-buffer-v1 (&key input config on-output no-announcement)
