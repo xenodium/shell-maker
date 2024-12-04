@@ -840,7 +840,7 @@ LOG: A function to log to.
                               (funcall on-output (format "\n\n%s" err))))))))
       shell-maker--request-process)))
 
-(cl-defun shell-maker-make-http-request (&key async url data encoding timeout
+(cl-defun shell-maker-make-http-request (&key async url data encoding timeout proxy
                                               headers fields filter on-output on-finished shell)
   "Make HTTP request at URL.
 
@@ -880,7 +880,8 @@ ON-FINISHED: (lambda (result))."
                                                           :encoding encoding
                                                           :timeout timeout
                                                           :headers headers
-                                                          :fields fields)
+                                                          :fields fields
+                                                          :proxy proxy)
                  :filter filter
                  :on-output on-output
                  :on-finished on-finished
@@ -891,7 +892,7 @@ ON-FINISHED: (lambda (result))."
        (cons :success (eq (map-elt result :exit-status) 0))
        (cons :output (map-elt result :output))))))
 
-(cl-defun shell-maker-make--curl-command (&key url data encoding timeout headers fields)
+(cl-defun shell-maker-make--curl-command (&key url data encoding timeout headers fields proxy)
   "Build curl command list using URL.
 
 Optionally, add:
@@ -908,6 +909,8 @@ FIELDS: As a list of strings
   (\"field1=value1\")
    \"field2=value2\")
 
+PROXY: Set when needing an http proxy.
+
 and TIMEOUT: defaults to 600ms."
   (unless encoding
     (setq encoding 'utf-8))
@@ -923,6 +926,8 @@ and TIMEOUT: defaults to 600ms."
                   "--fail-with-body"
                   "--no-progress-meter"
                   "-m" (number-to-string timeout))
+            (when proxy
+              (list "--proxy" proxy))
             (apply #'append
                    (mapcar (lambda (header)
                              (list "-H" header))
