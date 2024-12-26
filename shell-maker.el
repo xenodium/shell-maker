@@ -1822,8 +1822,7 @@ Of the form:
                                                                                    "\n")
                                                                                   (t
                                                                                    "\n\n")))
-                                                                   (not success))
-                                         (goto-char (point-max))))
+                                                                   (not success))))
                                      ;; Do not execute anything requiring a shell buffer
                                      ;; after this point, as on-finished or on-finished
                                      ;; subscribers may kill the shell buffers.
