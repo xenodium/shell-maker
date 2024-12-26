@@ -344,9 +344,6 @@ Of the form:
     (user-error "Not in a shell"))
   (let* ((shell-buffer (shell-maker-buffer shell-maker--config))
          (called-interactively (called-interactively-p #'interactive))
-         (command-handler (shell-maker-config-execute-command shell-maker--config))
-         (is-command-v1 (string-match-p "shell-maker-async-shell-command"
-                                        (format "%s" command-handler)))
          (shell-maker--input))
     (when input
       (with-current-buffer shell-buffer
@@ -355,19 +352,12 @@ Of the form:
     (comint-send-input) ;; Sets shell-maker--input
     (when (shell-maker--clear-input-for-execution shell-maker--input)
       (if called-interactively
-          (if is-command-v1
-              (shell-maker--eval-input-on-buffer-v1 :input shell-maker--input
-                                                    :config shell-maker--config)
-            (shell-maker--eval-input-on-buffer-v2 :input shell-maker--input
-                                                  :config shell-maker--config))
-        (if is-command-v1
-            (shell-maker--eval-input-on-buffer-v1 :input shell-maker--input
-                                                  :config shell-maker--config)
           (shell-maker--eval-input-on-buffer-v2 :input shell-maker--input
-                                                :config shell-maker--config
-                                                :on-output-broadcast on-output
-                                                :on-finished-broadcast on-finished))))))
-
+                                                :config shell-maker--config)
+        (shell-maker--eval-input-on-buffer-v2 :input shell-maker--input
+                                              :config shell-maker--config
+                                              :on-output-broadcast on-output
+                                              :on-finished-broadcast on-finished)))))
 (defun shell-maker-clear-buffer ()
   "Clear the current shell buffer."
   (interactive)
@@ -1865,82 +1855,6 @@ Of the form:
              (message (concat ":on-command-finished expects "
                               "(lambda (command output)) or "
                               "(lambda (command output success))")))))))
-
-;; TODO: Remove in favor of shell-maker--eval-input-on-buffer-v2.
-(cl-defun shell-maker--eval-input-on-buffer-v1 (&key input config on-output no-announcement)
-  "Evaluate INPUT string and output to CONFIG's shell buffer.
-
-Use ON-OUTPUT function to get notified of output events.
-
-With NO-ANNOUNCEMENT, skip announcing response when shell is in the background."
-  (message (concat "`shell-maker-async-shell-command' is deprecated "
-                   "(and will be removed). Please use `shell-maker-execute-command'."))
-  (unless config
-    (error "Missing mandatory :config param"))
-  ;; For viewing prompt delimiter (used to handle multiline prompts).
-  ;; (shell-maker--output-filter (shell-maker--process) "<shell-maker-end-of-prompt>")
-  (shell-maker--output-filter (shell-maker--process)
-                              (propertize "<shell-maker-end-of-prompt>"
-                                          'invisible (not shell-maker--show-invisible-markers)))
-  (let ((shell-buffer (shell-maker-buffer config))
-        (prefix-newline "")
-        (suffix-newline "\n\n")
-        (response-count 0)
-        (errored))
-    (funcall (shell-maker-config-execute-command shell-maker--config)
-             input
-             (shell-maker--extract-history
-              (with-current-buffer shell-buffer
-                (buffer-string))
-              (shell-maker-prompt-regexp shell-maker--config))
-             (lambda (response partial)
-               (setq response-count (1+ response-count))
-               (setq prefix-newline (if (> response-count 1)
-                                        ""
-                                      "\n"))
-               (if response
-                   (if partial
-                       (progn
-                         (shell-maker--write-partial-reply config (concat prefix-newline response))
-                         (setq shell-maker--busy partial)
-                         (when on-output
-                           (funcall on-output
-                                    input response nil nil)))
-                     (shell-maker--write-reply config (concat prefix-newline response suffix-newline))
-                     (unless no-announcement
-                       (shell-maker--announce-response shell-buffer))
-                     (setq shell-maker--busy nil)
-                     (shell-maker--write-input-ring-history shell-maker--config)
-                     ;; FIXME use (concat prefix-newline response suffix-newline) if not streaming.
-                     (when on-output
-                       (funcall on-output input response nil t))
-                     (when (shell-maker-config-on-command-finished shell-maker--config)
-                       (funcall (shell-maker-config-on-command-finished shell-maker--config)
-                                input
-                                (shell-maker-last-output)))
-                     (goto-char (point-max)))
-                 (shell-maker--write-reply config "Error: that's all is known" t) ;; comeback
-                 (setq shell-maker--busy nil)
-                 (unless no-announcement
-                   (shell-maker--announce-response shell-buffer))
-                 (when on-output
-                   (funcall on-output
-                            input (shell-maker-last-output) t t))))
-             (lambda (error)
-               (unless errored
-                 (shell-maker--write-reply config (concat (string-trim error) suffix-newline) t)
-                 (setq errored t))
-               (setq shell-maker--busy nil)
-               (unless no-announcement
-                 (shell-maker--announce-response shell-buffer))
-               (when on-output
-                 (funcall on-output
-                          input error t t))
-               (when (shell-maker-config-on-command-finished shell-maker--config)
-                 (funcall (shell-maker-config-on-command-finished shell-maker--config)
-                          input
-                          error)
-                 (goto-char (point-max)))))))
 
 (provide 'shell-maker)
 
