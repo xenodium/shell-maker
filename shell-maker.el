@@ -4,7 +4,7 @@
 
 ;; Author: Alvaro Ramirez https://xenodium.com
 ;; URL: https://github.com/xenodium/shell-maker
-;; Version: 0.76.1
+;; Version: 0.76.2
 ;; Package-Requires: ((emacs "27.1"))
 
 ;; This package is free software; you can redistribute it and/or modify
@@ -1811,18 +1811,21 @@ Of the form:
                                                                               (shell-maker--current-request-id))))))
                                        (with-current-buffer shell-buffer
                                          (setq shell-maker--busy nil)
-                                         (shell-maker--write-reply config (save-excursion
-                                                                            (goto-char (point-max))
-                                                                            ;; Command output may have ended in newlines.
-                                                                            ;; Adjust final number of added newlines
-                                                                            ;; prior to printing prompt.
-                                                                            (cond ((looking-back "\n\n" nil)
-                                                                                   "")
-                                                                                  ((looking-back "\n" nil)
-                                                                                   "\n")
-                                                                                  (t
-                                                                                   "\n\n")))
-                                                                   (not success))))
+                                         (let ((auto-scroll (eobp)))
+                                           (shell-maker--write-reply config (save-excursion
+                                                                              (goto-char (point-max))
+                                                                              ;; Command output may have ended in newlines.
+                                                                              ;; Adjust final number of added newlines
+                                                                              ;; prior to printing prompt.
+                                                                              (cond ((looking-back "\n\n" nil)
+                                                                                     "")
+                                                                                    ((looking-back "\n" nil)
+                                                                                     "\n")
+                                                                                    (t
+                                                                                     "\n\n")))
+                                                                     (not success))
+                                           (when auto-scroll
+                                             (goto-char (point-max))))))
                                      ;; Do not execute anything requiring a shell buffer
                                      ;; after this point, as on-finished or on-finished
                                      ;; subscribers may kill the shell buffers.
