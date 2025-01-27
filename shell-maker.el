@@ -102,6 +102,11 @@ For example:
   :type 'boolean
   :group 'shell-maker)
 
+(defcustom shell-maker-request-default-timeout 600
+  "Default curl --max-time argument."
+  :type 'number
+  :group 'shell-maker)
+
 (defvar-local shell-maker--input nil)
 
 (defvar-local shell-maker--current-request-id 0)
@@ -830,8 +835,9 @@ LOG: A function to log to.
                               (funcall on-output (format "\n\n%s" err))))))))
       shell-maker--request-process)))
 
-(cl-defun shell-maker-make-http-request (&key async url data encoding timeout proxy
-                                              headers fields filter on-output on-finished shell)
+(cl-defun shell-maker-make-http-request (&key async url data encoding
+                                              (timeout shell-maker-request-default-timeout)
+                                              proxy headers fields filter on-output on-finished shell)
   "Make HTTP request at URL.
 
 Optionally set:
@@ -849,7 +855,7 @@ FIELDS: As a list of strings
   (\"field1=value1\")
    \"field2=value2\")
 
-TIMEOUT: defaults to 600ms.
+TIMEOUT: defaults to `shell-maker-request-default-timeout'.
 FILTER: An optional function filter command output.  Use it for convertions.
 
   (lambda (raw-text)
@@ -882,7 +888,9 @@ ON-FINISHED: (lambda (result))."
        (cons :success (eq (map-elt result :exit-status) 0))
        (cons :output (map-elt result :output))))))
 
-(cl-defun shell-maker-make--curl-command (&key url data encoding timeout headers fields proxy)
+(cl-defun shell-maker-make--curl-command (&key url data encoding
+                                               (timeout shell-maker-request-default-timeout)
+                                               headers fields proxy)
   "Build curl command list using URL.
 
 Optionally, add:
@@ -901,11 +909,9 @@ FIELDS: As a list of strings
 
 PROXY: Set when needing an http proxy.
 
-and TIMEOUT: defaults to 600ms."
+and TIMEOUT: defaults to `shell-maker-request-default-timeout'."
   (unless encoding
     (setq encoding 'utf-8))
-  (unless timeout
-    (setq timeout 600))
   (let ((data-file (when data
                      (shell-maker--temp-file "curl-data"))))
     (when data
@@ -914,8 +920,9 @@ and TIMEOUT: defaults to 600ms."
         (insert (shell-maker--json-encode data))))
     (append (list "curl" url
                   "--fail-with-body"
-                  "--no-progress-meter"
-                  "-m" (number-to-string timeout))
+                  "--no-progress-meter")
+            (when timeout
+              (list "-m" (number-to-string timeout)))
             (when proxy
               (list "--proxy" proxy))
             (apply #'append
