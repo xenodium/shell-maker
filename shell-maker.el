@@ -162,7 +162,13 @@ Set MODE-LINE-NAME to override the mode line name."
   (shell-maker--with-temp-buffer-if new-session ;; Avoid picking up buffer-local vars from current buffer
     (let* ((old-point)
            (namespace (downcase (shell-maker-config-name config)))
-           (welcome-message))
+           (welcome-message)
+           (default-directory (cond ((file-directory-p default-directory)
+                                     default-directory)
+                                    ((file-directory-p (expand-file-name "~/"))
+                                     (expand-file-name "~/"))
+                                    (t
+                                     (error "Could not set default directory")))))
       (unless buffer-name
         (setq buffer-name (shell-maker-buffer-default-name
                            (shell-maker-config-name config))))
