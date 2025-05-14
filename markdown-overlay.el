@@ -3,6 +3,8 @@
 ;;; Commentary:
 ;;
 
+;;; Code:
+
 (defcustom markdown-overlay-highlight-blocks t
   "Whether or not to highlight source blocks."
   :type 'boolean
@@ -46,14 +48,17 @@ Objective-C -> (\"objective-c\" . \"objc\")"
        (zero-or-more whitespace)
        (group "```") (or "\n" eol)))
 
+(defun markdown-overlay-delete-all ()
+  "Remove all Markdown overlays."
+  (remove-overlays (point-min) (point-max) 'category 'markdown-overlay))
+
 (defun markdown-overlay-put-all ()
   "Put all Markdown overlays."
   (let* ((source-blocks (markdown-overlay--source-blocks))
          (avoid-ranges (seq-map (lambda (block)
                                   (map-elt block 'body))
                                 source-blocks)))
-    (dolist (overlay (overlays-in (point-min) (point-max)))
-      (delete-overlay overlay))
+    (markdown-overlay-delete-all)
     (when markdown-overlay-highlight-blocks
       (dolist (block source-blocks)
         (markdown-overlay--fontify-source-block
@@ -68,7 +73,7 @@ Objective-C -> (\"objective-c\" . \"objc\")"
          (car (map-elt block 'end))
          (cdr (map-elt block 'end)))))
     (when markdown-overlay-insert-dividers
-      (dolist (divider (shell-maker--prompt-end-markers))
+      (dolist (divider (markdown-overlay--divider-markers))
         (markdown-overlay--fontify-divider (car divider) (cdr divider))))
     (dolist (link (markdown-overlay--markdown-links avoid-ranges))
       (markdown-overlay--fontify-link
@@ -118,7 +123,7 @@ Objective-C -> (\"objective-c\" . \"objc\")"
                           (point-min)
                           (point-max)))
             (org-format-latex
-             (concat org-preview-latex-image-directory "shell-maker")
+             (concat org-preview-latex-image-directory "markdown-overlay")
              (car range) (cdr range)
              temporary-file-directory
              'overlays nil 'forbuffer org-preview-latex-default-process)))))))
@@ -156,6 +161,7 @@ Objective-C -> (\"objective-c\" . \"objc\")"
   (unless (= (mod (length props) 2) 0)
     (error "Props missing a property or value"))
   (while props
+    (overlay-put overlay 'category 'markdown-overlay)
     (overlay-put overlay (pop props) (pop props))))
 
 (defun markdown-overlay--resolve-internal-language (language)
@@ -188,7 +194,7 @@ Use QUOTES1-START QUOTES1-END LANG LANG-START LANG-END BODY-START
    'display
    (propertize "📋 "
                'pointer 'hand
-               'keymap (shell-maker--make-ret-binding-map
+               'keymap (markdown-overlay--make-ret-binding-map
                         (lambda ()
                           (interactive)
                           (kill-ring-save body-start body-end)
@@ -212,10 +218,6 @@ Use QUOTES1-START QUOTES1-END LANG LANG-START LANG-END BODY-START
                                     (downcase (string-trim lang)))
                                    "-mode")))
         (string (buffer-substring-no-properties body-start body-end))
-        (buf (if (and (boundp 'shell-maker--config)
-                      shell-maker--config)
-                 (shell-maker-buffer shell-maker--config)
-               (current-buffer)))
         (pos 0)
         (props)
         (overlay)
@@ -226,7 +228,7 @@ Use QUOTES1-START QUOTES1-END LANG LANG-START LANG-END BODY-START
           (setq propertized-text
                 (with-current-buffer
                     (get-buffer-create
-                     (format " *shell-maker-fontification:%s*" lang-mode))
+                     (format " *markdown-overlay-fontification:%s*" lang-mode))
                   (let ((inhibit-modification-hooks nil)
                         (inhibit-message t))
                     (erase-buffer)
@@ -238,26 +240,21 @@ Use QUOTES1-START QUOTES1-END LANG LANG-START LANG-END BODY-START
           (while (< pos (length propertized-text))
             (setq props (text-properties-at pos propertized-text))
             (setq overlay (make-overlay (+ body-start pos)
-                                        (+ body-start (1+ pos))
-                                        buf))
+                                        (+ body-start (1+ pos))))
             (markdown-overlay--put
              overlay
              'evaporate t
              'face (plist-get props 'face))
             (setq pos (1+ pos))))
       (markdown-overlay--put
-       (make-overlay body-start body-end buf)
+       (make-overlay body-start body-end)
        'evaporate t
        'face 'font-lock-doc-markup-face))))
 
 (defun markdown-overlay--fontify-divider (start end)
   "Display text between START and END as a divider."
   (markdown-overlay--put
-   (make-overlay start end
-                 (if (and (boundp 'shell-maker--config)
-                          shell-maker--config)
-                     (shell-maker-buffer shell-maker--config)
-                   (current-buffer)))
+   (make-overlay start end)
    'evaporate t
    'display
    (concat (propertize (concat (make-string (window-body-width) ? ) "")
@@ -559,11 +556,7 @@ Use QUOTES1-START QUOTES1-END LANG LANG-START LANG-END BODY-START
    'evaporate t
    'invisible 't)
   (markdown-overlay--put
-   (make-overlay body-start body-end
-                 (if (and (boundp 'shell-maker--config)
-                          shell-maker--config)
-                     (shell-maker-buffer shell-maker--config)
-                   (current-buffer)))
+   (make-overlay body-start body-end)
    'evaporate t
    'face 'font-lock-doc-markup-face))
 
@@ -579,6 +572,32 @@ Each range is a cons of start and end integers."
     (when (< start max)
       (push (cons start max) result))
     result))
+
+(defun markdown-overlay--make-ret-binding-map (fun)
+  "Make (kbd \"RET\") binding map to FUN."
+  (let ((map (make-sparse-keymap)))
+    (define-key map (kbd "RET") fun)
+    (define-key map [mouse-1] fun)
+    (define-key map [remap self-insert-command] 'ignore)
+    map))
+
+(defun markdown-overlay--divider-markers ()
+  "Return the location of all divider markers."
+  (save-excursion
+    (goto-char (point-min))
+    (let ((pattern (rx line-start
+                       (* (any " \t"))
+                       ;; TODO: Remove shell-maker specific regex.
+                       (or "<shell-maker-end-of-prompt>"
+                           (group (or (seq "***" (* "*"))
+                                      (seq "---" (* "-"))
+                                      (seq "___" (* "_")))))
+                       (*(any " \t"))
+                       line-end))
+          positions)
+      (while (re-search-forward pattern nil t)
+        (push (match-beginning 0) positions))
+      (nreverse positions))))
 
 (provide 'markdown-overlay)
 

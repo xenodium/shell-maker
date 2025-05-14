@@ -1348,17 +1348,6 @@ returned list is of the form:
             execute-command)))
   (goto-char (point-max)))
 
-(defun shell-maker--prompt-end-markers ()
-  "Return the location of all \"<shell-maker-end-of-prompt>\" markers.
-
-Each marker is of the form (START . END)."
-  (save-excursion
-    (goto-char (point-min))
-    (let (matches)
-      (while (search-forward "<shell-maker-end-of-prompt>" nil t)
-        (push (cons (match-beginning 0) (match-end 0)) matches))
-      (reverse matches))))
-
 (defun shell-maker-next-command-and-response (&optional backwards)
   "Move to next prompt and return interaction.  Return a command/response cons.
 
