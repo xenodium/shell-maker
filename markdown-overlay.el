@@ -276,39 +276,6 @@ Use START END TITLE-START TITLE-END URL-START URL-END."
              headers)))))
     (nreverse headers)))
 
-(defun shell-maker--fontify-link (start end title-start title-end url-start url-end)
-  "Fontify a markdown link.
-Use START END TITLE-START TITLE-END URL-START URL-END."
-  ;; Hide markup before
-  (shell-maker--overlay-put-all
-   (make-overlay start title-start)
-   'evaporate t
-   'invisible 't)
-  ;; Show title as link
-  (shell-maker--overlay-put-all
-   (make-overlay title-start title-end)
-   'evaporate t
-   'face 'link)
-  ;; Make RET open the URL
-  (define-key (let ((map (make-sparse-keymap)))
-                (define-key map [mouse-1]
-                            (lambda () (interactive)
-                              (browse-url (buffer-substring-no-properties url-start url-end))))
-                (define-key map (kbd "RET")
-                            (lambda () (interactive)
-                              (browse-url (buffer-substring-no-properties url-start url-end))))
-                (shell-maker--overlay-put-all
-                 (make-overlay title-start title-end)
-                 'evaporate t
-                 'keymap map)
-                map)
-              [remap self-insert-command] 'ignore)
-  ;; Hide markup after
-  (shell-maker--overlay-put-all
-   (make-overlay title-end end)
-   'evaporate t
-   'invisible 't))
-
 (defun shell-maker--markdown-bolds (&optional avoid-ranges)
   "Extract markdown bolds with AVOID-RANGES."
   (let ((bolds '())
@@ -418,38 +385,6 @@ Use START END TEXT-START TEXT-END."
    (make-overlay text-end end)
    'evaporate t
    'invisible 't))
-
-(defun shell-maker--markdown-italics (&optional avoid-ranges)
-  "Extract markdown italics with AVOID-RANGES."
-  (let ((italics '())
-        (case-fold-search nil))
-    (save-excursion
-      (goto-char (point-min))
-      (while (re-search-forward
-              (rx (or (group (or bol (one-or-more (any "\n \t")))
-                             (group "*")
-                             (group (one-or-more (not (any "\n*")))) "*")
-                      (group (or bol (one-or-more (any "\n \t")))
-                             (group "_")
-                             (group (one-or-more (not (any "\n_")))) "_")))
-              nil t)
-        (when-let ((begin (match-beginning 0))
-                   (end (match-end 0)))
-          (unless (seq-find (lambda (avoided)
-                              (and (>= begin (car avoided))
-                                   (<= end (cdr avoided))))
-                            avoid-ranges)
-            (push
-             (list
-              'start (or (match-beginning 2)
-                         (match-beginning 5))
-              'end end
-              'text (cons (or (match-beginning 3)
-                              (match-beginning 6))
-                          (or (match-end 3)
-                              (match-end 6))))
-             italics)))))
-    (nreverse italics)))
 
 (defun shell-maker--fontify-italic (start end text-start text-end)
   "Fontify a markdown italic.
