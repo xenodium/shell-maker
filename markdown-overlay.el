@@ -581,23 +581,23 @@ Each range is a cons of start and end integers."
     (define-key map [remap self-insert-command] 'ignore)
     map))
 
-(defun markdown-overlay--divider-markers ()
-  "Return the location of all divider markers."
+(defun shell-maker--divider-markers ()
+  "Return locations of all recognized divider lines."
   (save-excursion
     (goto-char (point-min))
     (let ((pattern (rx line-start
                        (* (any " \t"))
                        ;; TODO: Remove shell-maker specific regex.
                        (or "<shell-maker-end-of-prompt>"
-                           (group (or (seq "***" (* "*"))
-                                      (seq "---" (* "-"))
-                                      (seq "___" (* "_")))))
-                       (*(any " \t"))
+                           (or (seq "***" (* "*"))
+                               (seq "---" (* "-"))
+                               (seq "___" (* "_"))))
+                       (* (any " \t"))
                        line-end))
-          positions)
+          matches)
       (while (re-search-forward pattern nil t)
-        (push (match-beginning 0) positions))
-      (nreverse positions))))
+        (push (cons (match-beginning 0) (match-end 0)) matches))
+      (nreverse matches))))
 
 (provide 'markdown-overlay)
 
