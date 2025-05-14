@@ -3,7 +3,40 @@
 ;;; Commentary:
 ;;
 
-(defvar shell-maker--source-block-regexp
+(defcustom markdown-overlay-highlight-blocks t
+  "Whether or not to highlight source blocks."
+  :type 'boolean
+  :group 'markdown-overlay)
+
+(defcustom markdown-overlay-insert-dividers nil
+  "Whether or not to display a divider between requests and responses."
+  :type 'boolean
+  :group 'markdown-overlay)
+
+(defcustom markdown-overlay-render-latex nil
+  "Whether or not to render LaTeX blocks (experimental).
+
+Experimental.  Please report issues."
+  :type 'boolean
+  :group 'markdown-overlay)
+
+(defcustom markdown-overlay-language-mapping '(("elisp" . "emacs-lisp")
+                                               ("objective-c" . "objc")
+                                               ("objectivec" . "objc")
+                                               ("cpp" . "c++"))
+  "Maps external language names to Emacs names.
+
+Use only lower-case names.
+
+For example:
+
+                  lowercase      Emacs mode (without -mode)
+Objective-C -> (\"objective-c\" . \"objc\")"
+  :type '(alist :key-type (string :tag "Language Name/Alias")
+                :value-type (string :tag "Mode Name (without -mode)"))
+  :group 'markdown-overlay)
+
+(defvar markdown-overlay--source-block-regexp
   (rx  bol (zero-or-more whitespace) (group "```") (zero-or-more whitespace) ;; ```
        (group (zero-or-more (or alphanumeric "-" "+" "#"))) ;; languages like: emacs-lisp C++ C#
        (zero-or-more whitespace)
@@ -13,7 +46,84 @@
        (zero-or-more whitespace)
        (group "```") (or "\n" eol)))
 
-(defun shell-maker--match-source-block ()
+(defun markdown-overlay-put-all ()
+  "Put all Markdown overlays."
+  (let* ((source-blocks (markdown-overlay--source-blocks))
+         (avoid-ranges (seq-map (lambda (block)
+                                  (map-elt block 'body))
+                                source-blocks)))
+    (dolist (overlay (overlays-in (point-min) (point-max)))
+      (delete-overlay overlay))
+    (when markdown-overlay-highlight-blocks
+      (dolist (block source-blocks)
+        (markdown-overlay--fontify-source-block
+         (car (map-elt block 'start))
+         (cdr (map-elt block 'start))
+         (buffer-substring-no-properties (car (map-elt block 'language))
+                                         (cdr (map-elt block 'language)))
+         (car (map-elt block 'language))
+         (cdr (map-elt block 'language))
+         (car (map-elt block 'body))
+         (cdr (map-elt block 'body))
+         (car (map-elt block 'end))
+         (cdr (map-elt block 'end)))))
+    (when markdown-overlay-insert-dividers
+      (dolist (divider (shell-maker--prompt-end-markers))
+        (markdown-overlay--fontify-divider (car divider) (cdr divider))))
+    (dolist (link (markdown-overlay--markdown-links avoid-ranges))
+      (markdown-overlay--fontify-link
+       (map-elt link 'start)
+       (map-elt link 'end)
+       (car (map-elt link 'title))
+       (cdr (map-elt link 'title))
+       (car (map-elt link 'url))
+       (cdr (map-elt link 'url))))
+    (dolist (header (markdown-overlay--markdown-headers avoid-ranges))
+      (markdown-overlay--fontify-header
+       (map-elt header 'start)
+       (map-elt header 'end)
+       (car (map-elt header 'level))
+       (cdr (map-elt header 'level))
+       (car (map-elt header 'title))
+       (cdr (map-elt header 'title))))
+    (dolist (bold (markdown-overlay--markdown-bolds avoid-ranges))
+      (markdown-overlay--fontify-bold
+       (map-elt bold 'start)
+       (map-elt bold 'end)
+       (car (map-elt bold 'text))
+       (cdr (map-elt bold 'text))))
+    (dolist (italic (markdown-overlay--markdown-italics avoid-ranges))
+      (markdown-overlay--fontify-italic
+       (map-elt italic 'start)
+       (map-elt italic 'end)
+       (car (map-elt italic 'text))
+       (cdr (map-elt italic 'text))))
+    (dolist (strikethrough (markdown-overlay--markdown-strikethroughs avoid-ranges))
+      (markdown-overlay--fontify-strikethrough
+       (map-elt strikethrough 'start)
+       (map-elt strikethrough 'end)
+       (car (map-elt strikethrough 'text))
+       (cdr (map-elt strikethrough 'text))))
+    (dolist (inline-code (markdown-overlay--markdown-inline-codes avoid-ranges))
+      (markdown-overlay--fontify-inline-code
+       (car (map-elt inline-code 'body))
+       (cdr (map-elt inline-code 'body))))
+    (when markdown-overlay-render-latex
+      (require 'org)
+      ;; Silence org-element warnings.
+      (let ((major-mode 'org-mode))
+        (save-excursion
+          (dolist (range (markdown-overlay--invert-ranges
+                          avoid-ranges
+                          (point-min)
+                          (point-max)))
+            (org-format-latex
+             (concat org-preview-latex-image-directory "shell-maker")
+             (car range) (cdr range)
+             temporary-file-directory
+             'overlays nil 'forbuffer org-preview-latex-default-process)))))))
+
+(defun markdown-overlay--match-source-block ()
   "Return a matched source block by the previous search/regexp operation."
   (list
    'start (cons (match-beginning 1)
@@ -26,88 +136,53 @@
                      (match-end 2)))
    'body (cons (match-beginning 3) (match-end 3))))
 
-(defun shell-maker--source-blocks ()
+(defun markdown-overlay--source-blocks ()
   "Get a list of all source blocks in buffer."
   (let ((markdown-blocks '())
         (case-fold-search nil))
     (save-excursion
       (goto-char (point-min))
       (while (re-search-forward
-              shell-maker--source-block-regexp
+              markdown-overlay--source-block-regexp
               nil t)
         (when-let ((begin (match-beginning 0))
                    (end (match-end 0)))
-          (push (shell-maker--match-source-block)
+          (push (markdown-overlay--match-source-block)
                 markdown-blocks))))
     (nreverse markdown-blocks)))
 
-;; TODO: move up
-(defcustom shell-maker-highlight-blocks t
-  "Whether or not to highlight source blocks."
-  :type 'boolean
-  :group 'shell-maker)
-;; TODO: move up
-(defcustom shell-maker-insert-dividers nil
-  "Whether or not to display a divider between requests and responses."
-  :type 'boolean
-  :group 'shell-maker)
-
-;; TODO: move up
-(defcustom shell-maker-render-latex nil
-  "Whether or not to render LaTeX blocks (experimental).
-
-Experimental.  Please report issues."
-  :type 'boolean
-  :group 'shell-maker)
-
-(defcustom shell-maker-language-mapping '(("elisp" . "emacs-lisp")
-                                          ("objective-c" . "objc")
-                                          ("objectivec" . "objc")
-                                          ("cpp" . "c++"))
-  "Maps external language names to Emacs names.
-
-Use only lower-case names.
-
-For example:
-
-                  lowercase      Emacs mode (without -mode)
-Objective-C -> (\"objective-c\" . \"objc\")"
-  :type '(alist :key-type (string :tag "Language Name/Alias")
-                :value-type (string :tag "Mode Name (without -mode)"))
-  :group 'shell-maker)
-
-(defun shell-maker--overlay-put-all (overlay &rest props)
+(defun markdown-overlay--put (overlay &rest props)
   "Set multiple properties on OVERLAY via PROPS."
   (unless (= (mod (length props) 2) 0)
     (error "Props missing a property or value"))
   (while props
     (overlay-put overlay (pop props) (pop props))))
 
-(defun shell-maker--resolve-internal-language (language)
-  "Resolve external LANGUAGE to internal.
+(defun markdown-overlay--resolve-internal-language (language)
+  "Resolve external Markdown LANGUAGE to Emacs internal.
 
 For example \"elisp\" -> \"emacs-lisp\"."
   (when language
-    (or (map-elt shell-maker-language-mapping
+    (or (map-elt markdown-overlay-language-mapping
                  (downcase (string-trim language)))
         (when (intern (concat (downcase (string-trim language))
                               "-mode"))
           (downcase (string-trim language))))))
 
-(defun shell-maker--fontify-source-block (quotes1-start
-                                          quotes1-end
-                                          lang
-                                          lang-start
-                                          lang-end
-                                          body-start
-                                          body-end
-                                          quotes2-start
-                                          quotes2-end)
+(defun markdown-overlay--fontify-source-block (quotes1-start
+                                               quotes1-end
+                                               lang
+                                               lang-start
+                                               lang-end
+                                               body-start
+                                               body-end
+                                               quotes2-start
+                                               quotes2-end)
   "Fontify a source block.
 Use QUOTES1-START QUOTES1-END LANG LANG-START LANG-END BODY-START
  BODY-END QUOTES2-START and QUOTES2-END."
   ;; Overlay beginning "```" with a copy block button.
-  (shell-maker--overlay-put-all
+  (markdown-overlay--put
    (make-overlay quotes1-start quotes1-end)
    'evaporate t
    'display
@@ -119,21 +194,21 @@ Use QUOTES1-START QUOTES1-END LANG LANG-START LANG-END BODY-START
                           (kill-ring-save body-start body-end)
                           (message "Copied")))))
   ;; Hide end "```" altogether.
-  (shell-maker--overlay-put-all
+  (markdown-overlay--put
    (make-overlay quotes2-start quotes2-end)
    'evaporate t
    'invisible 't)
   (unless (eq lang-start lang-end)
-    (shell-maker--overlay-put-all
+    (markdown-overlay--put
      (make-overlay lang-start lang-end)
      'evaporate t
      'face '(:box t))
-    (shell-maker--overlay-put-all
+    (markdown-overlay--put
      (make-overlay lang-end (1+ lang-end))
      'evaporate t
      'display "\n\n"))
   (let ((lang-mode (intern (concat (or
-                                    (shell-maker--resolve-internal-language lang)
+                                    (markdown-overlay--resolve-internal-language lang)
                                     (downcase (string-trim lang)))
                                    "-mode")))
         (string (buffer-substring-no-properties body-start body-end))
@@ -165,19 +240,19 @@ Use QUOTES1-START QUOTES1-END LANG LANG-START LANG-END BODY-START
             (setq overlay (make-overlay (+ body-start pos)
                                         (+ body-start (1+ pos))
                                         buf))
-            (shell-maker--overlay-put-all
+            (markdown-overlay--put
              overlay
              'evaporate t
              'face (plist-get props 'face))
             (setq pos (1+ pos))))
-      (shell-maker--overlay-put-all
+      (markdown-overlay--put
        (make-overlay body-start body-end buf)
        'evaporate t
        'face 'font-lock-doc-markup-face))))
 
-(defun shell-maker--fontify-divider (start end)
+(defun markdown-overlay--fontify-divider (start end)
   "Display text between START and END as a divider."
-  (shell-maker--overlay-put-all
+  (markdown-overlay--put
    (make-overlay start end
                  (if (and (boundp 'shell-maker--config)
                           shell-maker--config)
@@ -188,7 +263,7 @@ Use QUOTES1-START QUOTES1-END LANG LANG-START LANG-END BODY-START
    (concat (propertize (concat (make-string (window-body-width) ? ) "")
                        'face '(:underline t)) "\n")))
 
-(defun shell-maker--markdown-links (&optional avoid-ranges)
+(defun markdown-overlay--markdown-links (&optional avoid-ranges)
   "Extract markdown links with AVOID-RANGES."
   (let ((links '())
         (case-fold-search nil))
@@ -217,40 +292,7 @@ Use QUOTES1-START QUOTES1-END LANG LANG-START LANG-END BODY-START
              links)))))
     (nreverse links)))
 
-(defun shell-maker--fontify-link (start end title-start title-end url-start url-end)
-  "Fontify a markdown link.
-Use START END TITLE-START TITLE-END URL-START URL-END."
-  ;; Hide markup before
-  (shell-maker--overlay-put-all
-   (make-overlay start title-start)
-   'evaporate t
-   'invisible 't)
-  ;; Show title as link
-  (shell-maker--overlay-put-all
-   (make-overlay title-start title-end)
-   'evaporate t
-   'face 'link)
-  ;; Make RET open the URL
-  (define-key (let ((map (make-sparse-keymap)))
-                (define-key map [mouse-1]
-                            (lambda () (interactive)
-                              (browse-url (buffer-substring-no-properties url-start url-end))))
-                (define-key map (kbd "RET")
-                            (lambda () (interactive)
-                              (browse-url (buffer-substring-no-properties url-start url-end))))
-                (shell-maker--overlay-put-all
-                 (make-overlay title-start title-end)
-                 'evaporate t
-                 'keymap map)
-                map)
-              [remap self-insert-command] 'ignore)
-  ;; Hide markup after
-  (shell-maker--overlay-put-all
-   (make-overlay title-end end)
-   'evaporate t
-   'invisible 't))
-
-(defun shell-maker--markdown-headers (&optional avoid-ranges)
+(defun markdown-overlay--markdown-headers (&optional avoid-ranges)
   "Extract markdown headers with AVOID-RANGES."
   (let ((headers '())
         (case-fold-search nil))
@@ -276,7 +318,40 @@ Use START END TITLE-START TITLE-END URL-START URL-END."
              headers)))))
     (nreverse headers)))
 
-(defun shell-maker--markdown-bolds (&optional avoid-ranges)
+(defun markdown-overlay--fontify-link (start end title-start title-end url-start url-end)
+  "Fontify a markdown link.
+Use START END TITLE-START TITLE-END URL-START URL-END."
+  ;; Hide markup before
+  (markdown-overlay--put
+   (make-overlay start title-start)
+   'evaporate t
+   'invisible 't)
+  ;; Show title as link
+  (markdown-overlay--put
+   (make-overlay title-start title-end)
+   'evaporate t
+   'face 'link)
+  ;; Make RET open the URL
+  (define-key (let ((map (make-sparse-keymap)))
+                (define-key map [mouse-1]
+                            (lambda () (interactive)
+                              (browse-url (buffer-substring-no-properties url-start url-end))))
+                (define-key map (kbd "RET")
+                            (lambda () (interactive)
+                              (browse-url (buffer-substring-no-properties url-start url-end))))
+                (markdown-overlay--put
+                 (make-overlay title-start title-end)
+                 'evaporate t
+                 'keymap map)
+                map)
+              [remap self-insert-command] 'ignore)
+  ;; Hide markup after
+  (markdown-overlay--put
+   (make-overlay title-end end)
+   'evaporate t
+   'invisible 't))
+
+(defun markdown-overlay--markdown-bolds (&optional avoid-ranges)
   "Extract markdown bolds with AVOID-RANGES."
   (let ((bolds '())
         (case-fold-search nil))
@@ -303,7 +378,7 @@ Use START END TITLE-START TITLE-END URL-START URL-END."
              bolds)))))
     (nreverse bolds)))
 
-(defun shell-maker--markdown-italics (&optional avoid-ranges)
+(defun markdown-overlay--markdown-italics (&optional avoid-ranges)
   "Extract markdown italics with AVOID-RANGES."
   (let ((italics '())
         (case-fold-search nil))
@@ -335,16 +410,16 @@ Use START END TITLE-START TITLE-END URL-START URL-END."
              italics)))))
     (nreverse italics)))
 
-(defun shell-maker--fontify-header (start _end level-start level-end title-start title-end)
+(defun markdown-overlay--fontify-header (start _end level-start level-end title-start title-end)
   "Fontify a markdown header.
 Use START END LEVEL-START LEVEL-END TITLE-START TITLE-END."
   ;; Hide markup before
-  (shell-maker--overlay-put-all
+  (markdown-overlay--put
    (make-overlay start title-start)
    'evaporate t
    'invisible 't)
   ;; Show title as header
-  (shell-maker--overlay-put-all
+  (markdown-overlay--put
    (make-overlay title-start title-end)
    'evaporate t
    'face
@@ -367,45 +442,45 @@ Use START END LEVEL-START LEVEL-END TITLE-START TITLE-END."
          (t
           'org-level-1))))
 
-(defun shell-maker--fontify-bold (start end text-start text-end)
+(defun markdown-overlay--fontify-bold (start end text-start text-end)
   "Fontify a markdown bold.
 Use START END TEXT-START TEXT-END."
   ;; Hide markup before
-  (shell-maker--overlay-put-all
+  (markdown-overlay--put
    (make-overlay start text-start)
    'evaporate t
    'invisible 't)
   ;; Show title as bold
-  (shell-maker--overlay-put-all
+  (markdown-overlay--put
    (make-overlay text-start text-end)
    'evaporate t
    'face 'bold)
   ;; Hide markup after
-  (shell-maker--overlay-put-all
+  (markdown-overlay--put
    (make-overlay text-end end)
    'evaporate t
    'invisible 't))
 
-(defun shell-maker--fontify-italic (start end text-start text-end)
+(defun markdown-overlay--fontify-italic (start end text-start text-end)
   "Fontify a markdown italic.
 Use START END TEXT-START TEXT-END."
   ;; Hide markup before
-  (shell-maker--overlay-put-all
+  (markdown-overlay--put
    (make-overlay start text-start)
    'evaporate t
    'invisible 't)
   ;; Show title as italic
-  (shell-maker--overlay-put-all
+  (markdown-overlay--put
    (make-overlay text-start text-end)
    'evaporate t
    'face 'italic)
   ;; Hide markup after
-  (shell-maker--overlay-put-all
+  (markdown-overlay--put
    (make-overlay text-end end)
    'evaporate t
    'invisible 't))
 
-(defun shell-maker--markdown-strikethroughs (&optional avoid-ranges)
+(defun markdown-overlay--markdown-strikethroughs (&optional avoid-ranges)
   "Extract markdown strikethroughs with AVOID-RANGES."
   (let ((strikethroughs '())
         (case-fold-search nil))
@@ -429,26 +504,26 @@ Use START END TEXT-START TEXT-END."
              strikethroughs)))))
     (nreverse strikethroughs)))
 
-(defun shell-maker--fontify-strikethrough (start end text-start text-end)
+(defun markdown-overlay--fontify-strikethrough (start end text-start text-end)
   "Fontify a markdown strikethrough.
 Use START END TEXT-START TEXT-END."
   ;; Hide markup before
-  (shell-maker--overlay-put-all
+  (markdown-overlay--put
    (make-overlay start text-start)
    'evaporate t
    'invisible 't)
   ;; Show title as strikethrough
-  (shell-maker--overlay-put-all
+  (markdown-overlay--put
    (make-overlay text-start text-end)
    'evaporate t
    'face '(:strike-through t))
   ;; Hide markup after
-  (shell-maker--overlay-put-all
+  (markdown-overlay--put
    (make-overlay text-end end)
    'evaporate t
    'invisible 't))
 
-(defun shell-maker--markdown-inline-codes (&optional avoid-ranges)
+(defun markdown-overlay--markdown-inline-codes (&optional avoid-ranges)
   "Get a list of all inline markdown code in buffer with AVOID-RANGES."
   (let ((codes '())
         (case-fold-search nil))
@@ -468,22 +543,22 @@ Use START END TEXT-START TEXT-END."
               'body (cons (match-beginning 1) (match-end 1))) codes)))))
     (nreverse codes)))
 
-(defun shell-maker--fontify-inline-code (body-start body-end)
+(defun markdown-overlay--fontify-inline-code (body-start body-end)
   "Fontify a source block.
 Use QUOTES1-START QUOTES1-END LANG LANG-START LANG-END BODY-START
  BODY-END QUOTES2-START and QUOTES2-END."
   ;; Hide ```
-  (shell-maker--overlay-put-all
+  (markdown-overlay--put
    (make-overlay (1- body-start)
                  body-start)
    'evaporate t
    'invisible 't)
-  (shell-maker--overlay-put-all
+  (markdown-overlay--put
    (make-overlay body-end
                  (1+ body-end))
    'evaporate t
    'invisible 't)
-  (shell-maker--overlay-put-all
+  (markdown-overlay--put
    (make-overlay body-start body-end
                  (if (and (boundp 'shell-maker--config)
                           shell-maker--config)
@@ -492,7 +567,7 @@ Use QUOTES1-START QUOTES1-END LANG LANG-START LANG-END BODY-START
    'evaporate t
    'face 'font-lock-doc-markup-face))
 
-(defun shell-maker--invert-ranges (ranges min max)
+(defun markdown-overlay--invert-ranges (ranges min max)
   "Invert a list of RANGES within the interval [MIN, MAX].
 Each range is a cons of start and end integers."
   (let ((result nil)
@@ -504,83 +579,6 @@ Each range is a cons of start and end integers."
     (when (< start max)
       (push (cons start max) result))
     result))
-
-(defun shell-maker--put-source-block-overlays ()
-  "Put overlays for all source blocks."
-  (let* ((source-blocks (shell-maker--source-blocks))
-         (avoid-ranges (seq-map (lambda (block)
-                                  (map-elt block 'body))
-                                source-blocks)))
-    (dolist (overlay (overlays-in (point-min) (point-max)))
-      (delete-overlay overlay))
-    (when shell-maker-highlight-blocks
-      (dolist (block source-blocks)
-        (shell-maker--fontify-source-block
-         (car (map-elt block 'start))
-         (cdr (map-elt block 'start))
-         (buffer-substring-no-properties (car (map-elt block 'language))
-                                         (cdr (map-elt block 'language)))
-         (car (map-elt block 'language))
-         (cdr (map-elt block 'language))
-         (car (map-elt block 'body))
-         (cdr (map-elt block 'body))
-         (car (map-elt block 'end))
-         (cdr (map-elt block 'end)))))
-    (when shell-maker-insert-dividers
-      (dolist (divider (shell-maker--prompt-end-markers))
-        (shell-maker--fontify-divider (car divider) (cdr divider))))
-    (dolist (link (shell-maker--markdown-links avoid-ranges))
-      (shell-maker--fontify-link
-       (map-elt link 'start)
-       (map-elt link 'end)
-       (car (map-elt link 'title))
-       (cdr (map-elt link 'title))
-       (car (map-elt link 'url))
-       (cdr (map-elt link 'url))))
-    (dolist (header (shell-maker--markdown-headers avoid-ranges))
-      (shell-maker--fontify-header
-       (map-elt header 'start)
-       (map-elt header 'end)
-       (car (map-elt header 'level))
-       (cdr (map-elt header 'level))
-       (car (map-elt header 'title))
-       (cdr (map-elt header 'title))))
-    (dolist (bold (shell-maker--markdown-bolds avoid-ranges))
-      (shell-maker--fontify-bold
-       (map-elt bold 'start)
-       (map-elt bold 'end)
-       (car (map-elt bold 'text))
-       (cdr (map-elt bold 'text))))
-    (dolist (italic (shell-maker--markdown-italics avoid-ranges))
-      (shell-maker--fontify-italic
-       (map-elt italic 'start)
-       (map-elt italic 'end)
-       (car (map-elt italic 'text))
-       (cdr (map-elt italic 'text))))
-    (dolist (strikethrough (shell-maker--markdown-strikethroughs avoid-ranges))
-      (shell-maker--fontify-strikethrough
-       (map-elt strikethrough 'start)
-       (map-elt strikethrough 'end)
-       (car (map-elt strikethrough 'text))
-       (cdr (map-elt strikethrough 'text))))
-    (dolist (inline-code (shell-maker--markdown-inline-codes avoid-ranges))
-      (shell-maker--fontify-inline-code
-       (car (map-elt inline-code 'body))
-       (cdr (map-elt inline-code 'body))))
-    (when shell-maker-render-latex
-      (require 'org)
-      ;; Silence org-element warnings.
-      (let ((major-mode 'org-mode))
-        (save-excursion
-          (dolist (range (shell-maker--invert-ranges
-                          avoid-ranges
-                          (point-min)
-                          (point-max)))
-            (org-format-latex
-             (concat org-preview-latex-image-directory "shell-maker")
-             (car range) (cdr range)
-             temporary-file-directory
-             'overlays nil 'forbuffer org-preview-latex-default-process)))))))
 
 (provide 'markdown-overlay)
 
