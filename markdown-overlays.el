@@ -1,28 +1,35 @@
-;;; markdown-overlay.el --- Overlays to prettify Markdown buffers  -*- lexical-binding: t -*-
+;;; markdown-overlays.el --- Overlays to prettify Markdown buffers  -*- lexical-binding: t -*-
 
 ;;; Commentary:
 ;;
+;; Put all supported Markdown overlays with:
+;;
+;;  (markdown-overlays-put)
+;;
+;; Remove all supported Markdown overlays with:
+;;
+;;  (markdown-overlays-put)
 
 ;;; Code:
 
-(defcustom markdown-overlay-highlight-blocks t
+(defcustom markdown-overlays-highlight-blocks t
   "Whether or not to highlight source blocks."
   :type 'boolean
-  :group 'markdown-overlay)
+  :group 'markdown-overlays)
 
-(defcustom markdown-overlay-insert-dividers nil
+(defcustom markdown-overlays-insert-dividers nil
   "Whether or not to display a divider between requests and responses."
   :type 'boolean
-  :group 'markdown-overlay)
+  :group 'markdown-overlays)
 
-(defcustom markdown-overlay-render-latex nil
+(defcustom markdown-overlays-render-latex nil
   "Whether or not to render LaTeX blocks (experimental).
 
 Experimental.  Please report issues."
   :type 'boolean
-  :group 'markdown-overlay)
+  :group 'markdown-overlays)
 
-(defcustom markdown-overlay-language-mapping '(("elisp" . "emacs-lisp")
+(defcustom markdown-overlays-language-mapping '(("elisp" . "emacs-lisp")
                                                ("objective-c" . "objc")
                                                ("objectivec" . "objc")
                                                ("cpp" . "c++"))
@@ -36,9 +43,9 @@ For example:
 Objective-C -> (\"objective-c\" . \"objc\")"
   :type '(alist :key-type (string :tag "Language Name/Alias")
                 :value-type (string :tag "Mode Name (without -mode)"))
-  :group 'markdown-overlay)
+  :group 'markdown-overlays)
 
-(defvar markdown-overlay--source-block-regexp
+(defvar markdown-overlays--source-block-regexp
   (rx  bol (zero-or-more whitespace) (group "```") (zero-or-more whitespace) ;; ```
        (group (zero-or-more (or alphanumeric "-" "+" "#"))) ;; languages like: emacs-lisp C++ C#
        (zero-or-more whitespace)
@@ -48,20 +55,20 @@ Objective-C -> (\"objective-c\" . \"objc\")"
        (zero-or-more whitespace)
        (group "```") (or "\n" eol)))
 
-(defun markdown-overlay-delete-all ()
+(defun markdown-overlays-remove ()
   "Remove all Markdown overlays."
-  (remove-overlays (point-min) (point-max) 'category 'markdown-overlay))
+  (remove-overlays (point-min) (point-max) 'category 'markdown-overlays))
 
-(defun markdown-overlay-put-all ()
+(defun markdown-overlays-put ()
   "Put all Markdown overlays."
-  (let* ((source-blocks (markdown-overlay--source-blocks))
+  (let* ((source-blocks (markdown-overlays--source-blocks))
          (avoid-ranges (seq-map (lambda (block)
                                   (map-elt block 'body))
                                 source-blocks)))
-    (markdown-overlay-delete-all)
-    (when markdown-overlay-highlight-blocks
+    (markdown-overlays-delete-all)
+    (when markdown-overlays-highlight-blocks
       (dolist (block source-blocks)
-        (markdown-overlay--fontify-source-block
+        (markdown-overlays--fontify-source-block
          (car (map-elt block 'start))
          (cdr (map-elt block 'start))
          (buffer-substring-no-properties (car (map-elt block 'language))
@@ -72,63 +79,63 @@ Objective-C -> (\"objective-c\" . \"objc\")"
          (cdr (map-elt block 'body))
          (car (map-elt block 'end))
          (cdr (map-elt block 'end)))))
-    (when markdown-overlay-insert-dividers
-      (dolist (divider (markdown-overlay--divider-markers))
-        (markdown-overlay--fontify-divider (car divider) (cdr divider))))
-    (dolist (link (markdown-overlay--markdown-links avoid-ranges))
-      (markdown-overlay--fontify-link
+    (when markdown-overlays-insert-dividers
+      (dolist (divider (markdown-overlays--divider-markers))
+        (markdown-overlays--fontify-divider (car divider) (cdr divider))))
+    (dolist (link (markdown-overlays--markdown-links avoid-ranges))
+      (markdown-overlays--fontify-link
        (map-elt link 'start)
        (map-elt link 'end)
        (car (map-elt link 'title))
        (cdr (map-elt link 'title))
        (car (map-elt link 'url))
        (cdr (map-elt link 'url))))
-    (dolist (header (markdown-overlay--markdown-headers avoid-ranges))
-      (markdown-overlay--fontify-header
+    (dolist (header (markdown-overlays--markdown-headers avoid-ranges))
+      (markdown-overlays--fontify-header
        (map-elt header 'start)
        (map-elt header 'end)
        (car (map-elt header 'level))
        (cdr (map-elt header 'level))
        (car (map-elt header 'title))
        (cdr (map-elt header 'title))))
-    (dolist (bold (markdown-overlay--markdown-bolds avoid-ranges))
-      (markdown-overlay--fontify-bold
+    (dolist (bold (markdown-overlays--markdown-bolds avoid-ranges))
+      (markdown-overlays--fontify-bold
        (map-elt bold 'start)
        (map-elt bold 'end)
        (car (map-elt bold 'text))
        (cdr (map-elt bold 'text))))
-    (dolist (italic (markdown-overlay--markdown-italics avoid-ranges))
-      (markdown-overlay--fontify-italic
+    (dolist (italic (markdown-overlays--markdown-italics avoid-ranges))
+      (markdown-overlays--fontify-italic
        (map-elt italic 'start)
        (map-elt italic 'end)
        (car (map-elt italic 'text))
        (cdr (map-elt italic 'text))))
-    (dolist (strikethrough (markdown-overlay--markdown-strikethroughs avoid-ranges))
-      (markdown-overlay--fontify-strikethrough
+    (dolist (strikethrough (markdown-overlays--markdown-strikethroughs avoid-ranges))
+      (markdown-overlays--fontify-strikethrough
        (map-elt strikethrough 'start)
        (map-elt strikethrough 'end)
        (car (map-elt strikethrough 'text))
        (cdr (map-elt strikethrough 'text))))
-    (dolist (inline-code (markdown-overlay--markdown-inline-codes avoid-ranges))
-      (markdown-overlay--fontify-inline-code
+    (dolist (inline-code (markdown-overlays--markdown-inline-codes avoid-ranges))
+      (markdown-overlays--fontify-inline-code
        (car (map-elt inline-code 'body))
        (cdr (map-elt inline-code 'body))))
-    (when markdown-overlay-render-latex
+    (when markdown-overlays-render-latex
       (require 'org)
       ;; Silence org-element warnings.
       (let ((major-mode 'org-mode))
         (save-excursion
-          (dolist (range (markdown-overlay--invert-ranges
+          (dolist (range (markdown-overlays--invert-ranges
                           avoid-ranges
                           (point-min)
                           (point-max)))
             (org-format-latex
-             (concat org-preview-latex-image-directory "markdown-overlay")
+             (concat org-preview-latex-image-directory "markdown-overlays")
              (car range) (cdr range)
              temporary-file-directory
              'overlays nil 'forbuffer org-preview-latex-default-process)))))))
 
-(defun markdown-overlay--match-source-block ()
+(defun markdown-overlays--match-source-block ()
   "Return a matched source block by the previous search/regexp operation."
   (list
    'start (cons (match-beginning 1)
@@ -141,41 +148,41 @@ Objective-C -> (\"objective-c\" . \"objc\")"
                      (match-end 2)))
    'body (cons (match-beginning 3) (match-end 3))))
 
-(defun markdown-overlay--source-blocks ()
+(defun markdown-overlays--source-blocks ()
   "Get a list of all source blocks in buffer."
   (let ((markdown-blocks '())
         (case-fold-search nil))
     (save-excursion
       (goto-char (point-min))
       (while (re-search-forward
-              markdown-overlay--source-block-regexp
+              markdown-overlays--source-block-regexp
               nil t)
         (when-let ((begin (match-beginning 0))
                    (end (match-end 0)))
-          (push (markdown-overlay--match-source-block)
+          (push (markdown-overlays--match-source-block)
                 markdown-blocks))))
     (nreverse markdown-blocks)))
 
-(defun markdown-overlay--put (overlay &rest props)
+(defun markdown-overlays--put (overlay &rest props)
   "Set multiple properties on OVERLAY via PROPS."
   (unless (= (mod (length props) 2) 0)
     (error "Props missing a property or value"))
   (while props
-    (overlay-put overlay 'category 'markdown-overlay)
+    (overlay-put overlay 'category 'markdown-overlays)
     (overlay-put overlay (pop props) (pop props))))
 
-(defun markdown-overlay--resolve-internal-language (language)
+(defun markdown-overlays--resolve-internal-language (language)
   "Resolve external Markdown LANGUAGE to Emacs internal.
 
 For example \"elisp\" -> \"emacs-lisp\"."
   (when language
-    (or (map-elt markdown-overlay-language-mapping
+    (or (map-elt markdown-overlays-language-mapping
                  (downcase (string-trim language)))
         (when (intern (concat (downcase (string-trim language))
                               "-mode"))
           (downcase (string-trim language))))))
 
-(defun markdown-overlay--fontify-source-block (quotes1-start
+(defun markdown-overlays--fontify-source-block (quotes1-start
                                                quotes1-end
                                                lang
                                                lang-start
@@ -188,33 +195,33 @@ For example \"elisp\" -> \"emacs-lisp\"."
 Use QUOTES1-START QUOTES1-END LANG LANG-START LANG-END BODY-START
  BODY-END QUOTES2-START and QUOTES2-END."
   ;; Overlay beginning "```" with a copy block button.
-  (markdown-overlay--put
+  (markdown-overlays--put
    (make-overlay quotes1-start quotes1-end)
    'evaporate t
    'display
    (propertize "📋 "
                'pointer 'hand
-               'keymap (markdown-overlay--make-ret-binding-map
+               'keymap (markdown-overlays--make-ret-binding-map
                         (lambda ()
                           (interactive)
                           (kill-ring-save body-start body-end)
                           (message "Copied")))))
   ;; Hide end "```" altogether.
-  (markdown-overlay--put
+  (markdown-overlays--put
    (make-overlay quotes2-start quotes2-end)
    'evaporate t
    'invisible 't)
   (unless (eq lang-start lang-end)
-    (markdown-overlay--put
+    (markdown-overlays--put
      (make-overlay lang-start lang-end)
      'evaporate t
      'face '(:box t))
-    (markdown-overlay--put
+    (markdown-overlays--put
      (make-overlay lang-end (1+ lang-end))
      'evaporate t
      'display "\n\n"))
   (let ((lang-mode (intern (concat (or
-                                    (markdown-overlay--resolve-internal-language lang)
+                                    (markdown-overlays--resolve-internal-language lang)
                                     (downcase (string-trim lang)))
                                    "-mode")))
         (string (buffer-substring-no-properties body-start body-end))
@@ -228,7 +235,7 @@ Use QUOTES1-START QUOTES1-END LANG LANG-START LANG-END BODY-START
           (setq propertized-text
                 (with-current-buffer
                     (get-buffer-create
-                     (format " *markdown-overlay-fontification:%s*" lang-mode))
+                     (format " *markdown-overlays-fontification:%s*" lang-mode))
                   (let ((inhibit-modification-hooks nil)
                         (inhibit-message t))
                     (erase-buffer)
@@ -241,26 +248,26 @@ Use QUOTES1-START QUOTES1-END LANG LANG-START LANG-END BODY-START
             (setq props (text-properties-at pos propertized-text))
             (setq overlay (make-overlay (+ body-start pos)
                                         (+ body-start (1+ pos))))
-            (markdown-overlay--put
+            (markdown-overlays--put
              overlay
              'evaporate t
              'face (plist-get props 'face))
             (setq pos (1+ pos))))
-      (markdown-overlay--put
+      (markdown-overlays--put
        (make-overlay body-start body-end)
        'evaporate t
        'face 'font-lock-doc-markup-face))))
 
-(defun markdown-overlay--fontify-divider (start end)
+(defun markdown-overlays--fontify-divider (start end)
   "Display text between START and END as a divider."
-  (markdown-overlay--put
+  (markdown-overlays--put
    (make-overlay start end)
    'evaporate t
    'display
    (concat (propertize (concat (make-string (window-body-width) ? ) "")
                        'face '(:underline t)) "\n")))
 
-(defun markdown-overlay--markdown-links (&optional avoid-ranges)
+(defun markdown-overlays--markdown-links (&optional avoid-ranges)
   "Extract markdown links with AVOID-RANGES."
   (let ((links '())
         (case-fold-search nil))
@@ -289,7 +296,7 @@ Use QUOTES1-START QUOTES1-END LANG LANG-START LANG-END BODY-START
              links)))))
     (nreverse links)))
 
-(defun markdown-overlay--markdown-headers (&optional avoid-ranges)
+(defun markdown-overlays--markdown-headers (&optional avoid-ranges)
   "Extract markdown headers with AVOID-RANGES."
   (let ((headers '())
         (case-fold-search nil))
@@ -315,16 +322,16 @@ Use QUOTES1-START QUOTES1-END LANG LANG-START LANG-END BODY-START
              headers)))))
     (nreverse headers)))
 
-(defun markdown-overlay--fontify-link (start end title-start title-end url-start url-end)
+(defun markdown-overlays--fontify-link (start end title-start title-end url-start url-end)
   "Fontify a markdown link.
 Use START END TITLE-START TITLE-END URL-START URL-END."
   ;; Hide markup before
-  (markdown-overlay--put
+  (markdown-overlays--put
    (make-overlay start title-start)
    'evaporate t
    'invisible 't)
   ;; Show title as link
-  (markdown-overlay--put
+  (markdown-overlays--put
    (make-overlay title-start title-end)
    'evaporate t
    'face 'link)
@@ -336,19 +343,19 @@ Use START END TITLE-START TITLE-END URL-START URL-END."
                 (define-key map (kbd "RET")
                             (lambda () (interactive)
                               (browse-url (buffer-substring-no-properties url-start url-end))))
-                (markdown-overlay--put
+                (markdown-overlays--put
                  (make-overlay title-start title-end)
                  'evaporate t
                  'keymap map)
                 map)
               [remap self-insert-command] 'ignore)
   ;; Hide markup after
-  (markdown-overlay--put
+  (markdown-overlays--put
    (make-overlay title-end end)
    'evaporate t
    'invisible 't))
 
-(defun markdown-overlay--markdown-bolds (&optional avoid-ranges)
+(defun markdown-overlays--markdown-bolds (&optional avoid-ranges)
   "Extract markdown bolds with AVOID-RANGES."
   (let ((bolds '())
         (case-fold-search nil))
@@ -375,7 +382,7 @@ Use START END TITLE-START TITLE-END URL-START URL-END."
              bolds)))))
     (nreverse bolds)))
 
-(defun markdown-overlay--markdown-italics (&optional avoid-ranges)
+(defun markdown-overlays--markdown-italics (&optional avoid-ranges)
   "Extract markdown italics with AVOID-RANGES."
   (let ((italics '())
         (case-fold-search nil))
@@ -407,16 +414,16 @@ Use START END TITLE-START TITLE-END URL-START URL-END."
              italics)))))
     (nreverse italics)))
 
-(defun markdown-overlay--fontify-header (start _end level-start level-end title-start title-end)
+(defun markdown-overlays--fontify-header (start _end level-start level-end title-start title-end)
   "Fontify a markdown header.
 Use START END LEVEL-START LEVEL-END TITLE-START TITLE-END."
   ;; Hide markup before
-  (markdown-overlay--put
+  (markdown-overlays--put
    (make-overlay start title-start)
    'evaporate t
    'invisible 't)
   ;; Show title as header
-  (markdown-overlay--put
+  (markdown-overlays--put
    (make-overlay title-start title-end)
    'evaporate t
    'face
@@ -439,45 +446,45 @@ Use START END LEVEL-START LEVEL-END TITLE-START TITLE-END."
          (t
           'org-level-1))))
 
-(defun markdown-overlay--fontify-bold (start end text-start text-end)
+(defun markdown-overlays--fontify-bold (start end text-start text-end)
   "Fontify a markdown bold.
 Use START END TEXT-START TEXT-END."
   ;; Hide markup before
-  (markdown-overlay--put
+  (markdown-overlays--put
    (make-overlay start text-start)
    'evaporate t
    'invisible 't)
   ;; Show title as bold
-  (markdown-overlay--put
+  (markdown-overlays--put
    (make-overlay text-start text-end)
    'evaporate t
    'face 'bold)
   ;; Hide markup after
-  (markdown-overlay--put
+  (markdown-overlays--put
    (make-overlay text-end end)
    'evaporate t
    'invisible 't))
 
-(defun markdown-overlay--fontify-italic (start end text-start text-end)
+(defun markdown-overlays--fontify-italic (start end text-start text-end)
   "Fontify a markdown italic.
 Use START END TEXT-START TEXT-END."
   ;; Hide markup before
-  (markdown-overlay--put
+  (markdown-overlays--put
    (make-overlay start text-start)
    'evaporate t
    'invisible 't)
   ;; Show title as italic
-  (markdown-overlay--put
+  (markdown-overlays--put
    (make-overlay text-start text-end)
    'evaporate t
    'face 'italic)
   ;; Hide markup after
-  (markdown-overlay--put
+  (markdown-overlays--put
    (make-overlay text-end end)
    'evaporate t
    'invisible 't))
 
-(defun markdown-overlay--markdown-strikethroughs (&optional avoid-ranges)
+(defun markdown-overlays--markdown-strikethroughs (&optional avoid-ranges)
   "Extract markdown strikethroughs with AVOID-RANGES."
   (let ((strikethroughs '())
         (case-fold-search nil))
@@ -501,26 +508,26 @@ Use START END TEXT-START TEXT-END."
              strikethroughs)))))
     (nreverse strikethroughs)))
 
-(defun markdown-overlay--fontify-strikethrough (start end text-start text-end)
+(defun markdown-overlays--fontify-strikethrough (start end text-start text-end)
   "Fontify a markdown strikethrough.
 Use START END TEXT-START TEXT-END."
   ;; Hide markup before
-  (markdown-overlay--put
+  (markdown-overlays--put
    (make-overlay start text-start)
    'evaporate t
    'invisible 't)
   ;; Show title as strikethrough
-  (markdown-overlay--put
+  (markdown-overlays--put
    (make-overlay text-start text-end)
    'evaporate t
    'face '(:strike-through t))
   ;; Hide markup after
-  (markdown-overlay--put
+  (markdown-overlays--put
    (make-overlay text-end end)
    'evaporate t
    'invisible 't))
 
-(defun markdown-overlay--markdown-inline-codes (&optional avoid-ranges)
+(defun markdown-overlays--markdown-inline-codes (&optional avoid-ranges)
   "Get a list of all inline markdown code in buffer with AVOID-RANGES."
   (let ((codes '())
         (case-fold-search nil))
@@ -540,27 +547,27 @@ Use START END TEXT-START TEXT-END."
               'body (cons (match-beginning 1) (match-end 1))) codes)))))
     (nreverse codes)))
 
-(defun markdown-overlay--fontify-inline-code (body-start body-end)
+(defun markdown-overlays--fontify-inline-code (body-start body-end)
   "Fontify a source block.
 Use QUOTES1-START QUOTES1-END LANG LANG-START LANG-END BODY-START
  BODY-END QUOTES2-START and QUOTES2-END."
   ;; Hide ```
-  (markdown-overlay--put
+  (markdown-overlays--put
    (make-overlay (1- body-start)
                  body-start)
    'evaporate t
    'invisible 't)
-  (markdown-overlay--put
+  (markdown-overlays--put
    (make-overlay body-end
                  (1+ body-end))
    'evaporate t
    'invisible 't)
-  (markdown-overlay--put
+  (markdown-overlays--put
    (make-overlay body-start body-end)
    'evaporate t
    'face 'font-lock-doc-markup-face))
 
-(defun markdown-overlay--invert-ranges (ranges min max)
+(defun markdown-overlays--invert-ranges (ranges min max)
   "Invert a list of RANGES within the interval [MIN, MAX].
 Each range is a cons of start and end integers."
   (let ((result nil)
@@ -573,7 +580,7 @@ Each range is a cons of start and end integers."
       (push (cons start max) result))
     result))
 
-(defun markdown-overlay--make-ret-binding-map (fun)
+(defun markdown-overlays--make-ret-binding-map (fun)
   "Make (kbd \"RET\") binding map to FUN."
   (let ((map (make-sparse-keymap)))
     (define-key map (kbd "RET") fun)
@@ -599,6 +606,6 @@ Each range is a cons of start and end integers."
         (push (cons (match-beginning 0) (match-end 0)) matches))
       (nreverse matches))))
 
-(provide 'markdown-overlay)
+(provide 'markdown-overlays)
 
-;;; markdown-overlay.el ends here
+;;; markdown-overlays.el ends here
