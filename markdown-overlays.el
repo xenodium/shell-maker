@@ -2,6 +2,10 @@
 
 ;;; Commentary:
 ;;
+;; Setup:
+;;
+;; (require 'markdown-overlays)
+;;
 ;; Put all supported Markdown overlays with:
 ;;
 ;;  (markdown-overlays-put)
