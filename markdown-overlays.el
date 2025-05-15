@@ -30,7 +30,7 @@
 ;;
 ;; Remove all supported Markdown overlays with:
 ;;
-;;  (markdown-overlays-put)
+;;  (markdown-overlays-remove)
 
 ;;; Code:
 
@@ -87,7 +87,7 @@ Objective-C -> (\"objective-c\" . \"objc\")"
          (avoid-ranges (seq-map (lambda (block)
                                   (map-elt block 'body))
                                 source-blocks)))
-    (markdown-overlays-delete-all)
+    (markdown-overlays-remove)
     (when markdown-overlays-highlight-blocks
       (dolist (block source-blocks)
         (markdown-overlays--fontify-source-block
@@ -610,7 +610,7 @@ Each range is a cons of start and end integers."
     (define-key map [remap self-insert-command] 'ignore)
     map))
 
-(defun shell-maker--divider-markers ()
+(defun markdown-overlays--divider-markers ()
   "Return locations of all recognized divider lines."
   (save-excursion
     (goto-char (point-min))
