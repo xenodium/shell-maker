@@ -628,6 +628,43 @@ Each range is a cons of start and end integers."
         (push (cons (match-beginning 0) (match-end 0)) matches))
       (nreverse matches))))
 
+(defun markdown-overlays-make-local-file-link (filename)
+  "Convert FILENAME to a Markdown link.
+
+Returns a string like '[file.txt](file:///absolute/path/to/file.txt)'
+if the file exists, nil otherwise."
+  (when (file-exists-p filename)
+    (let* ((absolute-path (expand-file-name filename))
+           (file-uri (concat "file://" absolute-path))
+           (basename (file-name-nondirectory absolute-path)))
+      (format "[%s](%s)" basename file-uri))))
+
+(defun markdown-overlays-expand-local-links (markdown)
+  "Expand file:// links in MARKDOWN to code blocks with file contents.
+
+Transforms links like [file.txt](file:///absolute/path/to/file.txt)
+into:
+
+```file.txt
+Content of file.txt
+```"
+  (with-temp-buffer
+    (insert markdown)
+    (goto-char (point-min))
+    (while (re-search-forward "\\[\\([^]]+\\)\\](file://\\([^)]+\\))" nil t)
+      (let* ((filename (match-string 1))
+             (filepath (match-string 2))
+             (match-start (match-beginning 0))
+             (match-end (match-end 0)))
+        (when (file-exists-p filepath)
+          (goto-char match-start)
+          (delete-region match-start match-end)
+          (insert (format "\n```%s\n%s\n```\n"
+                          filename (with-temp-buffer
+                                     (insert-file-contents filepath)
+                                     (buffer-string)))))))
+    (buffer-string)))
+
 (provide 'markdown-overlays)
 
 ;;; markdown-overlays.el ends here
