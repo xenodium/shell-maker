@@ -353,8 +353,8 @@ Of the form:
   (let* ((shell-buffer (shell-maker-buffer shell-maker--config))
          (called-interactively (called-interactively-p #'interactive))
          (shell-maker--input))
-    (when input
-      (with-current-buffer shell-buffer
+    (with-current-buffer shell-buffer
+      (when input
         (goto-char (point-max))
         (insert input)))
     (comint-send-input) ;; Sets shell-maker--input
@@ -1830,11 +1830,12 @@ Of the form:
                                      ;; the shell buffer.
                                      (when on-finished-broadcast
                                        (funcall on-finished-broadcast input full-output success))
-                                     (shell-maker--notify-on-command-finished
-                                      :config config
-                                      :input input
-                                      :output full-output
-                                      :success success)))))))
+                                     (with-current-buffer shell-buffer
+                                       (shell-maker--notify-on-command-finished
+                                        :config config
+                                        :input input
+                                        :output full-output
+                                        :success success))))))))
 
 (cl-defun shell-maker--notify-on-command-finished (&key config input output success)
   "Notify CONFIG's :on-command-finished observer of INPUT, OUTPUT, and SUCCESS."
