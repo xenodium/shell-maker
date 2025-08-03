@@ -4,8 +4,9 @@
 
 ;; Author: Alvaro Ramirez https://xenodium.com
 ;; URL: https://github.com/xenodium/shell-maker
-;; Version: 0.78.2
+;; Version: 0.79.1
 ;; Package-Requires: ((emacs "27.1"))
+(defconst shell-maker-version "0.79.1")
 
 ;; This package is free software; you can redistribute it and/or modify
 ;; it under the terms of the GNU General Public License as published by
@@ -717,10 +718,11 @@ Return filtered response."
            (stderr-file (make-temp-file "stderr-"))
            (exit-status (apply #'call-process (seq-first command) nil (list buffer stderr-file) nil (cdr command)))
            (data (buffer-substring-no-properties (point-min) (point-max)))
-           (filtered (funcall filter data))
+           (filtered (funcall filter (list (cons :pending data))))
            (text (or (map-elt filtered :filtered)
                      (map-elt filtered :pending)
-                     filtered
+                     (when (stringp filtered)
+                       filtered)
                      (with-temp-buffer
                        (insert-file-contents stderr-file)
                        (string-trim (buffer-string)))
@@ -729,7 +731,7 @@ Return filtered response."
        (cons :exit-status exit-status)
        (cons :output text)))))
 
-(cl-defun shell-maker--execute-command-async (&key command filter on-output on-finished log)
+(cl-defun shell-maker--execute-command-async (&key command filter on-output on-incoming-requests on-finished log)
   "Execute COMMAND list (command + params) asynchronously.
 
 FILTER: An optional function filter command output.  Use it for convertions.
@@ -760,8 +762,7 @@ LOG: A function to log to.
     (error "Missing mandatory :log param"))
   (let* ((process-name (make-temp-name "shell-maker--execute-command-async-"))
          (logs)
-         (output)
-         (pending))
+         (state))
     (cl-flet ((flush-logs ()
                 (apply log (list logs)))
               (log (format &rest args)
@@ -775,33 +776,61 @@ LOG: A function to log to.
              :buffer nil
              :command command
              :filter (lambda (_process raw-output)
+                       ;; Start - Comment out to get stack traces.
                        (condition-case err
+                       ;; End - Comment out to get stack traces.
                            (progn
                              (log "Filter pending")
-                             (log "%s" pending)
                              (log "Filter output")
                              (log "%s" raw-output)
-                             (setq raw-output (concat pending raw-output))
                              (log "Filter combined")
                              (log "%s" raw-output)
-                             (let ((filtered (funcall filter raw-output)))
+                             (setf (map-elt state :pending)
+                                   (concat (map-elt state :pending)
+                                           raw-output))
+                             (let ((filtered (funcall filter state)))
                                (map-elt filtered :filtered)
                                (cond ((null filtered)
                                       (log "Ignored nil filtered"))
+                                     ((map-elt filtered :incoming-requests)
+                                      (when on-incoming-requests
+                                        (funcall on-incoming-requests
+                                                 (map-elt filtered :incoming-requests)))
+                                      ;; Override state with latest filtered values.
+                                      (mapc (lambda (item)
+                                              (setf (map-elt state (car item))
+                                                    (cdr item)))
+                                            filtered))
                                      ((and (consp filtered) ;; partial extraction
                                            (or (seq-contains-p (map-keys filtered) :filtered)
                                                (seq-contains-p (map-keys filtered) :pending)))
-                                      (setq output (concat output
-                                                           (or (map-elt filtered :filtered) "")))
-                                      (when on-output
-                                        (funcall on-output (or (map-elt filtered :filtered) "")))
-                                      (setq pending (map-elt filtered :pending)))
+                                      ;; Override state with latest filtered values.
+                                      (mapc (lambda (item)
+                                              (setf (map-elt state (car item))
+                                                    (cdr item)))
+                                            filtered)
+                                      (when (and on-output (map-elt state :filtered))
+                                        (funcall on-output (map-elt state :filtered)))
+                                      (setf (map-elt state :output)
+                                            (concat (map-elt state :output)
+                                                    (map-elt state :filtered)))
+                                      (setf (map-elt state :filtered) nil))
                                      ((stringp filtered)
-                                      (setq output (concat output filtered))
-                                      (when on-output
-                                        (funcall on-output filtered)))
+                                      (setf (map-elt state :filtered)
+                                            (concat (map-elt state :filtered) filtered))
+                                      (when (and on-output (map-elt state :filtered))
+                                        (funcall on-output (map-elt state :filtered)))
+                                      (setf (map-elt state :output)
+                                            (concat (map-elt state :output)
+                                                    (map-elt state :filtered)))
+                                      (setf (map-elt state :filtered) nil))
                                      (t
-                                      (setq output (concat output (format "\"%s\"" filtered)))
+                                      (setf (map-elt state :filtered)
+                                            (concat (map-elt state :filtered)
+                                                    (format "\"%s\"" filtered)))
+                                      (setf (map-elt state :output)
+                                            (concat (map-elt state :output)
+                                                    (map-elt state :filtered)))
                                       (when on-output
                                         (funcall on-output
                                                  (concat "\n\n:filter output must be either a string, "
@@ -810,36 +839,53 @@ LOG: A function to log to.
                                                          "  (:pending . \"{...\")\n\n"
                                                          (format "But received (%s):\n\n" (type-of filtered))
                                                          (format "\"%s\"" filtered))))))))
+                         ;; Start - Comment out to get stack traces.
                          (error
                           (when on-output
-                            (funcall on-output (format "\n\n%s" err))))))
+                            (funcall on-output (format "\n\n%s" err)))))
+                         ;; End - Comment out to get stack traces.
+                       )
              :stderr (make-pipe-process
                       :name (concat process-name "-stderr")
                       :filter (lambda (_process raw-output)
                                 (log "Stderr")
                                 (log "%s" raw-output)
-                                (setq output (concat output raw-output))
+                                (setf (map-elt state :filtered)
+                                      (concat (map-elt state :filtered)
+                                              raw-output))
                                 (when on-output
-                                  (funcall on-output (string-trim raw-output))))
+                                  (funcall on-output (string-trim (map-elt state :filtered))))
+                                (setf (map-elt state :filtered) nil))
                       :sentinel (lambda (process _event)
                                   (kill-buffer (process-buffer process))))
              :sentinel (lambda (process _event)
+                         ;; Start - Comment out to get stack traces.
                          (condition-case err
+                         ;; End - Comment out to get stack traces.
                              (let ((exit-status (process-exit-status process)))
                                (log "Sentinel")
                                (log "Exit status: %d" exit-status)
-                               (when on-finished
+                               (log "Exit state: %s" state)
+                               (when (and on-finished
+                                          ;; Don't finish shell request if
+                                          ;; there are pending incoming requests
+                                          (null (map-elt state :incoming-requests)))
                                  (funcall on-finished (list
                                                        (cons :exit-status exit-status)
-                                                       (cons :output output))))
+                                                       (cons :output (map-elt state :output)))))
+                               (setf (map-elt state :filtered) nil)
                                (flush-logs))
+                           ;; Start - Comment out to get stack traces.
                            (error
                             (when on-output
-                              (funcall on-output (format "\n\n%s" err))))))))
+                              (funcall on-output (format "\n\n%s" err)))))
+                           ;; End - Comment out to get stack traces.
+                         )))
       shell-maker--request-process)))
 
 (cl-defun shell-maker-make-http-request (&key async url data encoding timeout proxy
-                                              headers fields filter on-output on-finished shell)
+                                              headers fields filter on-output
+                                              on-incoming-requests on-finished shell)
   "Make HTTP request at URL.
 
 Optionally set:
@@ -882,6 +928,7 @@ ON-FINISHED: (lambda (result))."
                                                           :proxy proxy)
                  :filter filter
                  :on-output on-output
+                 :on-incoming-requests on-incoming-requests
                  :on-finished on-finished
                  :shell shell)))
     (when (and (listp result)
@@ -937,7 +984,7 @@ and TIMEOUT: defaults to 600ms."
             (when data
               (list "-d" (format "@%s" data-file))))))
 
-(cl-defun shell-maker-execute-command (&key async command filter on-output on-finished shell log)
+(cl-defun shell-maker-execute-command (&key async command filter on-output on-incoming-requests on-finished shell log)
   "Execute COMMAND list (command + params).
 
 ASYNC: Optionally execute COMMAND asynchronously.
@@ -976,6 +1023,9 @@ LOG: A function to log to (lambda (format &rest))."
                       (funcall (map-elt shell :write-output) output))
                     (when on-output
                       (funcall on-output output)))
+       :on-incoming-requests (lambda (incoming-requests)
+                    (when on-incoming-requests
+                      (funcall on-incoming-requests incoming-requests)))
        :on-finished (lambda (result)
                       (when (map-elt shell :finish-output)
                         (funcall (map-elt shell :finish-output)
