@@ -251,8 +251,7 @@ Use QUOTES1-START QUOTES1-END LANG LANG-START LANG-END BODY-START
         (props)
         (overlay)
         (propertized-text))
-    (if (and (fboundp lang-mode)
-             (provided-mode-derived-p lang-mode 'prog-mode))
+    (if (fboundp lang-mode)
         (progn
           (setq propertized-text
                 (with-current-buffer
