@@ -4,9 +4,9 @@
 
 ;; Author: Alvaro Ramirez https://xenodium.com
 ;; URL: https://github.com/xenodium/shell-maker
-;; Version: 0.79.1
+;; Version: 0.79.2
 ;; Package-Requires: ((emacs "27.1"))
-(defconst shell-maker-version "0.79.1")
+(defconst shell-maker-version "0.79.2")
 
 ;; This package is free software; you can redistribute it and/or modify
 ;; it under the terms of the GNU General Public License as published by
