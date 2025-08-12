@@ -4,9 +4,9 @@
 
 ;; Author: Alvaro Ramirez https://xenodium.com
 ;; URL: https://github.com/xenodium/shell-maker
-;; Version: 0.79.2
+;; Version: 0.80.1
 ;; Package-Requires: ((emacs "27.1"))
-(defconst shell-maker-version "0.79.2")
+(defconst shell-maker-version "0.80.1")
 
 ;; This package is free software; you can redistribute it and/or modify
 ;; it under the terms of the GNU General Public License as published by
@@ -148,6 +148,13 @@ For example:
        (with-temp-buffer ,@body)
      ,@body))
 
+(defvar-keymap shell-maker-mode-map
+  :parent comint-mode-map
+  :doc "Base keymap for `shell-maker' based modes."
+  "S-<return>" #'newline
+  "C-x C-s" #'shell-maker-save-session-transcript
+  "C-M-h" #'shell-maker-mark-output)
+
 (defun shell-maker-start (config &optional no-focus welcome-function new-session buffer-name mode-line-name)
   "Start a shell with CONFIG.
 
@@ -192,18 +199,9 @@ Set MODE-LINE-NAME to override the mode line name."
         `(define-derived-mode ,(shell-maker-major-mode config) comint-mode
            ,(or mode-line-name (shell-maker-config-name config))
            ,(format "Major mode for %s shell." (shell-maker-config-name config))
-           (define-key ,(shell-maker-major-mode-map config)
-                       [remap comint-send-input] 'shell-maker-submit)
-           (define-key ,(shell-maker-major-mode-map config)
-                       (kbd "S-<return>") #'newline)
-           (define-key ,(shell-maker-major-mode-map config)
-                       [remap comint-interrupt-subjob] 'shell-maker-interrupt)
-           (define-key ,(shell-maker-major-mode-map config)
-                       (kbd "C-x C-s") 'shell-maker-save-session-transcript)
-           (define-key ,(shell-maker-major-mode-map config)
-                       (kbd "C-M-h") 'shell-maker-mark-output)
-           (define-key ,(shell-maker-major-mode-map config)
-                       [remap comint-history-isearch-backward-regexp] 'shell-maker-search-history))))
+           (keymap-set shell-maker-mode-map "<remap> <comint-send-input>" #'shell-maker-submit)
+           (keymap-set shell-maker-mode-map "<remap> <comint-interrupt-subjob>" #'shell-maker-interrupt)
+           (keymap-set shell-maker-mode-map "<remap> <comint-history-isearch-backward-regexp>" #'shell-maker-search-history))))
 
       (unless (comint-check-proc buffer-name)
         (with-current-buffer (get-buffer-create buffer-name)
@@ -228,25 +226,17 @@ Set MODE-LINE-NAME to override the mode line name."
         (push-mark old-point))
       (get-buffer buffer-name))))
 
-(defun shell-maker-define-major-mode (config)
-  "Define the major mode for the shell using CONFIG."
+(defun shell-maker-define-major-mode (config &optional mode-map)
+  "Define the major mode for the shell using CONFIG.
+
+Optionally use MODE-MAP."
   (eval
    (macroexpand
     `(define-derived-mode ,(shell-maker-major-mode config) comint-mode
        ,(shell-maker-config-name config)
        ,(format "Major mode for %s shell." (shell-maker-config-name config))
-       (define-key ,(shell-maker-major-mode-map config)
-                   [remap comint-send-input] 'shell-maker-submit)
-       (define-key ,(shell-maker-major-mode-map config)
-                   (kbd "S-<return>") #'newline)
-       (define-key ,(shell-maker-major-mode-map config)
-                   [remap comint-interrupt-subjob] 'shell-maker-interrupt)
-       (define-key ,(shell-maker-major-mode-map config)
-                   (kbd "C-x C-s") 'shell-maker-save-session-transcript)
-       (define-key ,(shell-maker-major-mode-map config)
-                   (kbd "C-M-h") 'shell-maker-mark-output)
-       (define-key ,(shell-maker-major-mode-map config)
-                   [remap comint-history-isearch-backward-regexp] 'shell-maker-search-history)))))
+       (when ,mode-map
+         (use-local-map ,mode-map))))))
 
 (defun shell-maker-welcome-message (config)
   "Return a welcome message to be printed using CONFIG."
@@ -750,6 +740,10 @@ ON-OUTPUT: A function to notify of output.
 ON-FINISHED: A function to notify when command is finished.
 
   (lambda (success)).
+
+ON-INCOMING-REQUESTS: To handle incoming requests.
+
+  (lambda (incoming-requests))
 
 LOG: A function to log to.
 
