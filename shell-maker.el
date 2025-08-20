@@ -303,8 +303,14 @@ Optionally use MODE-MAP."
                         'shell-maker--output-filter)
     (set-buffer-modified-p nil)))
 
-(defun shell-maker--write-reply (config reply &optional failed)
-  "Write REPLY to CONFIG prompt.  Set FAILED to record failure."
+(cl-defun shell-maker--write-reply (&key config reply failed on-output)
+  "Write REPLY to CONFIG prompt.  Set FAILED to record failure.
+
+Use ON-OUTPUT function to monitor output text."
+  (unless config
+    (error "Missing config"))
+  (unless reply
+    (error "Missing reply"))
   (let ((inhibit-read-only t)
         (shell-buffer (shell-maker-buffer config)))
     (with-current-buffer shell-buffer
@@ -316,7 +322,9 @@ Optionally use MODE-MAP."
                                           (propertize "\n<shell-maker-failed-command>\n"
                                                       'invisible (not shell-maker--show-invisible-markers))
                                         "")
-                                      (shell-maker-prompt shell-maker--config)))))))
+                                      (shell-maker-prompt shell-maker--config))))))
+  (when on-output
+    (funcall on-output reply)))
 
 (cl-defun shell-maker-submit (&key input on-output on-finished)
   "Submit current input.
@@ -349,14 +357,15 @@ Of the form:
         (goto-char (point-max))
         (insert input)))
     (comint-send-input) ;; Sets shell-maker--input
-    (when (shell-maker--clear-input-for-execution shell-maker--input)
+    (when (shell-maker--clear-input-for-execution :input shell-maker--input
+                                                  :on-output on-output)
       (if called-interactively
           (shell-maker--eval-input-on-buffer-v2 :input shell-maker--input
                                                 :config shell-maker--config)
         (shell-maker--eval-input-on-buffer-v2 :input shell-maker--input
                                               :config shell-maker--config
-                                              :on-output-broadcast on-output
-                                              :on-finished-broadcast on-finished)))))
+                                              :on-output on-output
+                                              :on-finished on-finished)))))
 (defun shell-maker-clear-buffer ()
   "Clear the current shell buffer."
   (interactive)
@@ -629,14 +638,19 @@ With prefix TREAT-AS-FAILURE, mark as failed."
      (concat "\n" (shell-maker-prompt shell-maker--config)))
     (setq shell-maker--busy nil)))
 
-(defun shell-maker--clear-input-for-execution (input)
+(cl-defun shell-maker--clear-input-for-execution (&key input on-output)
   "Clear INPUT prior to shell execution.
 
+Invokes optional ON-OUTPUT with error output.
+
 Return t if INPUT us cleared.  nil otherwise."
+  (unless input
+    (error "Missing input"))
   (unless shell-maker--busy
     (setq shell-maker--busy t)
     (cond
      ((string-equal "help" (string-trim input))
+      ;; TODO: output help to on-output also.
       (shell-maker--print-help)
       (setq shell-maker--busy nil)
       nil)
@@ -648,13 +662,16 @@ Return t if INPUT us cleared.  nil otherwise."
       (set-buffer-modified-p nil)
       nil)
      ((string-equal "config" (string-trim input))
-      (shell-maker--write-reply shell-maker--config
-                                (shell-maker--dump-config shell-maker--config))
+      (shell-maker--write-reply :config shell-maker--config
+                                :reply (shell-maker--dump-config shell-maker--config)
+                                :on-output on-output)
       (setq shell-maker--busy nil)
       nil)
      ((not (shell-maker--curl-version-supported))
-      (shell-maker--write-reply shell-maker--config
-                                "\nYou need curl version 7.76 or newer.\n\n")
+      (shell-maker--write-reply :config shell-maker--config
+                                :reply "\nYou need curl version 7.76 or newer.\n\n"
+                                :failed t
+                                :on-output on-output)
       (setq shell-maker--busy nil)
       nil)
      ((and (shell-maker-config-validate-command
@@ -665,7 +682,10 @@ Return t if INPUT us cleared.  nil otherwise."
                            (funcall (shell-maker-config-validate-command
                                      shell-maker--config) input)
                            "\n\n")))
-        (shell-maker--write-reply shell-maker--config error)
+        (shell-maker--write-reply :config shell-maker--config
+                                  :reply error
+                                  :on-output on-output
+                                  :failed t)
         (shell-maker--notify-on-command-finished
          :config shell-maker--config
          :input input
@@ -1233,8 +1253,14 @@ returned list is of the form:
         (json-read-from-string json)
       (error nil))))
 
-(defun shell-maker--write-partial-reply (config reply)
-  "Write partial REPLY to CONFIG shell."
+(cl-defun shell-maker--write-partial-reply (&key config reply on-output)
+  "Write partial REPLY to CONFIG shell.
+
+Use ON-OUTPUT function to monitor output text."
+  (unless config
+    (error "Missing config"))
+  (unless reply
+    (error "Missing reply"))
   (let ((inhibit-read-only t)
         (shell-buffer (shell-maker-buffer config))
         (auto-scroll (eobp)))
@@ -1245,7 +1271,9 @@ returned list is of the form:
             (shell-maker--output-filter (shell-maker--process) reply))
         (save-excursion
           (goto-char (point-max))
-          (shell-maker--output-filter (shell-maker--process) reply))))))
+          (shell-maker--output-filter (shell-maker--process) reply))))
+    (when on-output
+      (funcall on-output reply))))
 
 (defun shell-maker--preparse-json (json)
   "Preparse JSON and return a cons of parsed objects vs unparsed text."
@@ -1794,17 +1822,17 @@ If KEEP-IN-HISTORY, don't mark to ignore it."
                           (funcall action)))
     (buffer-string)))
 
-(cl-defun shell-maker--eval-input-on-buffer-v2 (&key input config on-output-broadcast on-finished-broadcast)
+(cl-defun shell-maker--eval-input-on-buffer-v2 (&key input config on-output on-finished)
   "Evaluate INPUT in CONFIG's shell buffer.
 
-Use ON-OUTPUT-BROADCAST: function to monitor command response text.
+Use ON-OUTPUT: function to monitor command response text.
 
 Of the form:
 
  (lambda (response)
   (message \"Command: %s\" response))
 
-Use ON-FINISHED-BROADCAST: function to monitor when command is finished.
+Use ON-FINISHED: function to monitor when command is finished.
 
 Of the form:
 
@@ -1820,7 +1848,8 @@ Of the form:
     (shell-maker--output-filter (shell-maker--process)
                                 (propertize "<shell-maker-end-of-prompt>"
                                             'invisible (not shell-maker--show-invisible-markers))))
-  (shell-maker--write-partial-reply config "\n")
+  (shell-maker--write-partial-reply :config config
+                                    :reply "\n")
   (let* ((request-id (shell-maker--increment-request-id))
          (shell-buffer (shell-maker-buffer shell-maker--config))
          (executor (shell-maker-config-execute-command config))
@@ -1842,9 +1871,9 @@ Of the form:
                                                                              (shell-maker--current-request-id)))
                                                             (buffer-live-p shell-buffer))))
                                       (with-current-buffer shell-buffer
-                                        (shell-maker--write-partial-reply config output)))
-                                    (when on-output-broadcast
-                                      (funcall on-output-broadcast output))
+                                        (shell-maker--write-partial-reply :config config
+                                                                          :reply output
+                                                                          :on-output on-output)))
                                     (setq full-output (concat full-output output))))
               (cons :finish-output (lambda (success)
                                      (when-let ((active (and (buffer-live-p shell-buffer)
@@ -1853,7 +1882,8 @@ Of the form:
                                        (with-current-buffer shell-buffer
                                          (setq shell-maker--busy nil)
                                          (let ((auto-scroll (eobp)))
-                                           (shell-maker--write-reply config (save-excursion
+                                           (shell-maker--write-reply :config config
+                                                                     :reply (save-excursion
                                                                               (goto-char (point-max))
                                                                               ;; Command output may have ended in newlines.
                                                                               ;; Adjust final number of added newlines
@@ -1864,7 +1894,8 @@ Of the form:
                                                                                      "\n")
                                                                                     (t
                                                                                      "\n\n")))
-                                                                     (not success))
+                                                                     :on-output on-output
+                                                                     :failed (not success))
                                            (when auto-scroll
                                              (goto-char (point-max))))))
                                      ;; Do not execute anything requiring a shell buffer
@@ -1872,8 +1903,8 @@ Of the form:
                                      ;; subscribers may kill the shell buffers.
                                      ;; Use let-bound values to save anything that may require
                                      ;; the shell buffer.
-                                     (when on-finished-broadcast
-                                       (funcall on-finished-broadcast input full-output success))
+                                     (when on-finished
+                                       (funcall on-finished input full-output success))
                                      (with-current-buffer shell-buffer
                                        (shell-maker--notify-on-command-finished
                                         :config config
