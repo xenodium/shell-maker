@@ -230,13 +230,21 @@ Set MODE-LINE-NAME to override the mode line name."
   "Define the major mode for the shell using CONFIG.
 
 Optionally use MODE-MAP."
-  (eval
-   (macroexpand
-    `(define-derived-mode ,(shell-maker-major-mode config) comint-mode
-       ,(shell-maker-config-name config)
-       ,(format "Major mode for %s shell." (shell-maker-config-name config))
-       (when ,mode-map
-         (use-local-map ,mode-map))))))
+  (if mode-map
+      (eval `(define-derived-mode ,(shell-maker-major-mode config) comint-mode
+               ,(shell-maker-config-name config)
+               ,(format "Major mode for %s shell." (shell-maker-config-name config))
+               (use-local-map ,mode-map)))
+    (let ((mode-map-symbol (intern (format "%s-shell-mode-map"
+                                           (downcase (shell-maker-config-name config))))))
+      (when (boundp mode-map-symbol)
+        (makunbound mode-map-symbol))
+      (eval `(defvar-keymap ,mode-map-symbol
+               :parent shell-maker-mode-map))
+      (eval `(define-derived-mode ,(shell-maker-major-mode config) comint-mode
+               ,(shell-maker-config-name config)
+               ,(format "Major mode for %s shell." (shell-maker-config-name config))
+               (use-local-map ,mode-map-symbol))))))
 
 (defun shell-maker-welcome-message (config)
   "Return a welcome message to be printed using CONFIG."
