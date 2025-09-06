@@ -1873,11 +1873,12 @@ Of the form:
               (cons :history history)
               (cons :log (lambda (format &rest args)
                            (apply #'shell-maker--log (append (list config format) args))))
-              (cons :write-output (lambda (output)
+              (cons :write-output (lambda (output &optional force)
                                     (setq output (or output "<nil-message>"))
-                                    (when-let ((active (and (eq request-id (with-current-buffer shell-buffer
-                                                                             (shell-maker--current-request-id)))
-                                                            (buffer-live-p shell-buffer))))
+                                    (when-let ((active (or force
+                                                           (and (eq request-id (with-current-buffer shell-buffer
+                                                                                 (shell-maker--current-request-id)))
+                                                                (buffer-live-p shell-buffer)))))
                                       (with-current-buffer shell-buffer
                                         (shell-maker--write-partial-reply :config config
                                                                           :reply output
