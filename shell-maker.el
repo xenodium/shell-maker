@@ -1873,6 +1873,7 @@ Of the form:
               (cons :history history)
               (cons :log (lambda (format &rest args)
                            (apply #'shell-maker--log (append (list config format) args))))
+              (cons :buffer shell-buffer)
               (cons :write-output (lambda (output &optional force)
                                     (setq output (or output "<nil-message>"))
                                     (when-let ((active (or force
