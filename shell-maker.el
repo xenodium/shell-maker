@@ -320,17 +320,22 @@ Use ON-OUTPUT function to monitor output text."
   (unless reply
     (error "Missing reply"))
   (let ((inhibit-read-only t)
-        (shell-buffer (shell-maker-buffer config)))
+        (shell-buffer (shell-maker-buffer config))
+        (auto-scroll (eobp))
+        (output (concat reply
+                        (if failed
+                            (propertize "\n<shell-maker-failed-command>\n"
+                                        'invisible (not shell-maker--show-invisible-markers))
+                          "")
+                        (shell-maker-prompt shell-maker--config))))
     (with-current-buffer shell-buffer
-      (save-excursion
-        (goto-char (point-max))
-        (comint-output-filter (shell-maker--process)
-                              (concat reply
-                                      (if failed
-                                          (propertize "\n<shell-maker-failed-command>\n"
-                                                      'invisible (not shell-maker--show-invisible-markers))
-                                        "")
-                                      (shell-maker-prompt shell-maker--config))))))
+      (if auto-scroll
+          (progn
+            (goto-char (point-max))
+            (shell-maker--output-filter (shell-maker--process) output))
+        (save-excursion
+          (goto-char (point-max))
+          (shell-maker--output-filter (shell-maker--process) output)))))
   (when on-output
     (funcall on-output reply)))
 
@@ -357,23 +362,36 @@ Of the form:
   (interactive)
   (unless (eq major-mode (shell-maker-major-mode shell-maker--config))
     (user-error "Not in a shell"))
-  (let* ((shell-buffer (shell-maker-buffer shell-maker--config))
-         (called-interactively (called-interactively-p #'interactive))
-         (shell-maker--input))
-    (with-current-buffer shell-buffer
-      (when input
-        (goto-char (point-max))
-        (insert input)))
-    (comint-send-input) ;; Sets shell-maker--input
-    (when (shell-maker--clear-input-for-execution :input shell-maker--input
-                                                  :on-output on-output)
-      (if called-interactively
-          (shell-maker--eval-input-on-buffer-v2 :input shell-maker--input
-                                                :config shell-maker--config)
-        (shell-maker--eval-input-on-buffer-v2 :input shell-maker--input
-                                              :config shell-maker--config
-                                              :on-output on-output
-                                              :on-finished on-finished)))))
+  (if (shell-maker-point-at-last-prompt-p)
+      (let* ((shell-buffer (shell-maker-buffer shell-maker--config))
+             (called-interactively (called-interactively-p #'interactive))
+             (shell-maker--input))
+        (with-current-buffer shell-buffer
+          (when input
+            (goto-char (point-max))
+            (insert input)))
+        (comint-send-input) ;; Sets shell-maker--input
+        (when (shell-maker--clear-input-for-execution :input shell-maker--input
+                                                      :on-output on-output)
+          (if called-interactively
+              (shell-maker--eval-input-on-buffer-v2 :input shell-maker--input
+                                                    :config shell-maker--config)
+            (shell-maker--eval-input-on-buffer-v2 :input shell-maker--input
+                                                  :config shell-maker--config
+                                                  :on-output on-output
+                                                  :on-finished on-finished))))
+    (goto-char (point-max))))
+
+(defun shell-maker-point-at-last-prompt-p ()
+  "Return non-nil if point is at last prompt."
+  (unless (eq major-mode (shell-maker-major-mode shell-maker--config))
+    (user-error "Not in a shell"))
+  (save-excursion
+    (let ((point (point)))
+      (goto-char (point-max))
+      (when (re-search-backward comint-prompt-regexp nil t)
+        (>= point (match-end 0))))))
+
 (defun shell-maker-clear-buffer ()
   "Clear the current shell buffer."
   (interactive)
@@ -1283,6 +1301,25 @@ Use ON-OUTPUT function to monitor output text."
     (when on-output
       (funcall on-output reply))))
 
+(defmacro shell-maker-with-auto-scroll-edit (&rest body)
+  "Execute BODY, preserving point unless already at end of buffer."
+  `(if (eobp)
+       (progn
+         (goto-char (point-max))
+         ,@body
+         (goto-char (point-max))
+         (let ((proc (get-buffer-process (current-buffer)))
+               (point (point)))
+           (when (and proc (> point (process-mark proc)))
+             (set-marker (process-mark proc) point))))
+     (save-excursion
+       (goto-char (point-max))
+       ,@body
+       (let ((proc (get-buffer-process (current-buffer)))
+             (point (point)))
+         (when (and proc (> point (process-mark proc)))
+           (set-marker (process-mark proc) point))))))
+
 (defun shell-maker--preparse-json (json)
   "Preparse JSON and return a cons of parsed objects vs unparsed text."
   (let ((parsed)
@@ -1510,7 +1547,7 @@ Uses PROCESS and STRING same as `comint-output-filter'."
       (let ((inhibit-read-only t))
         (save-restriction
           (widen)
-          (goto-char (process-mark process))
+          (goto-char (point-max))
           (set-marker comint-last-output-start (point))
           (insert string)
           (set-marker (process-mark process) (point))
