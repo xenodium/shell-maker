@@ -1303,22 +1303,37 @@ Use ON-OUTPUT function to monitor output text."
 
 (defmacro shell-maker-with-auto-scroll-edit (&rest body)
   "Execute BODY, preserving point unless already at end of buffer."
-  `(if (eobp)
-       (progn
+  (save-restriction)
+  `(let ((new-location))
+     (if (eobp)
+         (progn
+           (goto-char (point-max))
+           (set-marker comint-last-output-start (point))
+           ,@body
+           (let ((proc (get-buffer-process (current-buffer)))
+                 (point (point)))
+             (when (and proc (> point (process-mark proc)))
+               (set-marker (process-mark proc) point))
+             (setq new-location point))
+           (goto-char (point-max)))
+       (save-excursion
          (goto-char (point-max))
+         (set-marker comint-last-output-start (point))
          ,@body
-         (goto-char (point-max))
          (let ((proc (get-buffer-process (current-buffer)))
                (point (point)))
            (when (and proc (> point (process-mark proc)))
-             (set-marker (process-mark proc) point))))
-     (save-excursion
-       (goto-char (point-max))
-       ,@body
-       (let ((proc (get-buffer-process (current-buffer)))
-             (point (point)))
-         (when (and proc (> point (process-mark proc)))
-           (set-marker (process-mark proc) point))))))
+             (set-marker (process-mark proc) point))
+           (setq new-location point))))
+     (unless comint-use-prompt-regexp
+       (with-silent-modifications
+         (add-text-properties comint-last-output-start new-location
+                              `(rear-nonsticky
+                                ,shell-maker--prompt-rear-nonsticky
+                                front-sticky
+                                (field inhibit-line-move-field-capture)
+                                field output
+                                inhibit-line-move-field-capture t))))))
 
 (defun shell-maker--preparse-json (json)
   "Preparse JSON and return a cons of parsed objects vs unparsed text."
