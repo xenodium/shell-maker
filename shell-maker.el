@@ -321,7 +321,6 @@ Use ON-OUTPUT function to monitor output text."
     (error "Missing reply"))
   (let ((inhibit-read-only t)
         (shell-buffer (shell-maker-buffer config))
-        (auto-scroll (eobp))
         (output (concat reply
                         (if failed
                             (propertize "\n<shell-maker-failed-command>\n"
@@ -329,7 +328,7 @@ Use ON-OUTPUT function to monitor output text."
                           "")
                         (shell-maker-prompt shell-maker--config))))
     (with-current-buffer shell-buffer
-      (if auto-scroll
+      (if (eobp) ;; auto-scroll
           (progn
             (goto-char (point-max))
             (shell-maker--output-filter (shell-maker--process) output))
