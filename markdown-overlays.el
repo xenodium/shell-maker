@@ -119,7 +119,8 @@ Objective-C -> (\"objective-c\" . \"objc\")"
        (car (map-elt header 'level))
        (cdr (map-elt header 'level))
        (car (map-elt header 'title))
-       (cdr (map-elt header 'title))))
+       (cdr (map-elt header 'title))
+       (map-elt header 'needs-trailing-newline)))
     (dolist (bold (markdown-overlays--markdown-bolds avoid-ranges))
       (markdown-overlays--fontify-bold
        (map-elt bold 'start)
@@ -324,7 +325,7 @@ Use QUOTES1-START QUOTES1-END LANG LANG-START LANG-END BODY-START
     (save-excursion
       (goto-char (point-min))
       (while (re-search-forward
-              (rx bol (group (one-or-more "#"))
+              (rx bol (zero-or-more space) (group (one-or-more "#"))
                   (one-or-more space)
                   (group (one-or-more (not (any "\n")))) eol)
               nil t)
@@ -339,7 +340,12 @@ Use QUOTES1-START QUOTES1-END LANG LANG-START LANG-END BODY-START
               'start begin
               'end end
               'level (cons (match-beginning 1) (match-end 1))
-              'title (cons (match-beginning 2) (match-end 2)))
+              'title (cons (match-beginning 2) (match-end 2))
+              'needs-trailing-newline (save-excursion
+                                        (goto-char end)
+                                        (and (not (eobp))
+                                             (not (looking-at-p "\n[ \t]*$"))
+                                             (not (looking-at-p "\n\n")))))
              headers)))))
     (nreverse headers)))
 
@@ -435,12 +441,14 @@ Use START END TITLE-START TITLE-END URL-START URL-END."
              italics)))))
     (nreverse italics)))
 
-(defun markdown-overlays--fontify-header (start _end level-start level-end title-start title-end)
+(defun markdown-overlays--fontify-header (_start end level-start level-end title-start title-end &optional needs-trailing-newline)
   "Fontify a markdown header.
-Use START END LEVEL-START LEVEL-END TITLE-START TITLE-END."
+Use START END LEVEL-START LEVEL-END TITLE-START TITLE-END and
+NEEDS-TRAILING-NEWLINE."
+  (message "Needs newline? %s" needs-trailing-newline)
   ;; Hide markup before
   (markdown-overlays--put
-   (make-overlay start title-start)
+   (make-overlay level-start title-start)
    'evaporate t
    'invisible 't)
   ;; Show title as header
@@ -465,7 +473,12 @@ Use START END LEVEL-START LEVEL-END TITLE-START TITLE-END."
          ((eq (- level-end level-start) 8)
           'org-level-8)
          (t
-          'org-level-1))))
+          'org-level-1)))
+  (when (and needs-trailing-newline (< end (point-max)))
+    (markdown-overlays--put
+     (make-overlay (1+ end) (1+ end))
+     'evaporate t
+     'before-string "\n")))
 
 (defun markdown-overlays--fontify-bold (start end text-start text-end)
   "Fontify a markdown bold.
