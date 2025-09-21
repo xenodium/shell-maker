@@ -249,7 +249,7 @@ Optionally use MODE-MAP."
 (defun shell-maker-welcome-message (config)
   "Return a welcome message to be printed using CONFIG."
   (format
-   "Welcome to %s shell\n\n  Type %s and press %s for details.\n\n  Like this package? Consider ✨%s✨\n\n"
+   "\n\n\n  Welcome to %s shell\n\n\n    Type %s and press %s for details.\n\n    Like this package? Consider ✨%s✨\n\n\n\n\n"
    (propertize (shell-maker-config-name config)
                'font-lock-face 'font-lock-comment-face)
    (propertize "help" 'font-lock-face 'italic)
