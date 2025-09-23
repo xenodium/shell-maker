@@ -445,7 +445,6 @@ Use START END TITLE-START TITLE-END URL-START URL-END."
   "Fontify a markdown header.
 Use START END LEVEL-START LEVEL-END TITLE-START TITLE-END and
 NEEDS-TRAILING-NEWLINE."
-  (message "Needs newline? %s" needs-trailing-newline)
   ;; Hide markup before
   (markdown-overlays--put
    (make-overlay level-start title-start)
