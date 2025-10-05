@@ -361,25 +361,25 @@ Of the form:
   (interactive)
   (unless (eq major-mode (shell-maker-major-mode shell-maker--config))
     (user-error "Not in a shell"))
-  (if (shell-maker-point-at-last-prompt-p)
-      (let* ((shell-buffer (shell-maker-buffer shell-maker--config))
-             (called-interactively (called-interactively-p #'interactive))
-             (shell-maker--input))
-        (with-current-buffer shell-buffer
-          (when input
-            (goto-char (point-max))
-            (insert input)))
-        (comint-send-input) ;; Sets shell-maker--input
-        (when (shell-maker--clear-input-for-execution :input shell-maker--input
-                                                      :on-output on-output)
-          (if called-interactively
-              (shell-maker--eval-input-on-buffer-v2 :input shell-maker--input
-                                                    :config shell-maker--config)
-            (shell-maker--eval-input-on-buffer-v2 :input shell-maker--input
-                                                  :config shell-maker--config
-                                                  :on-output on-output
-                                                  :on-finished on-finished))))
-    (goto-char (point-max))))
+  (unless (shell-maker-point-at-last-prompt-p)
+    (goto-char (point-max)))
+  (let* ((shell-buffer (shell-maker-buffer shell-maker--config))
+         (called-interactively (called-interactively-p #'interactive))
+         (shell-maker--input))
+    (with-current-buffer shell-buffer
+      (when input
+        (goto-char (point-max))
+        (insert input)))
+    (comint-send-input) ;; Sets shell-maker--input
+    (when (shell-maker--clear-input-for-execution :input shell-maker--input
+                                                  :on-output on-output)
+      (if called-interactively
+          (shell-maker--eval-input-on-buffer-v2 :input shell-maker--input
+                                                :config shell-maker--config)
+        (shell-maker--eval-input-on-buffer-v2 :input shell-maker--input
+                                              :config shell-maker--config
+                                              :on-output on-output
+                                              :on-finished on-finished)))))
 
 (defun shell-maker-point-at-last-prompt-p ()
   "Return non-nil if point is at last prompt."
