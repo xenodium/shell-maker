@@ -6,7 +6,6 @@
 ;; URL: https://github.com/xenodium/shell-maker
 ;; Version: 0.82.3
 ;; Package-Requires: ((emacs "27.1"))
-(defconst shell-maker-version "0.82.3")
 
 ;; This package is free software; you can redistribute it and/or modify
 ;; it under the terms of the GNU General Public License as published by
@@ -32,6 +31,8 @@
 ;; Support the work https://github.com/sponsors/xenodium
 
 ;;; Code:
+
+(defconst shell-maker-version "0.82.3")
 
 (require 'comint)
 (require 'goto-addr)
