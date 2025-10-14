@@ -4,7 +4,7 @@
 
 ;; Author: Alvaro Ramirez https://xenodium.com
 ;; URL: https://github.com/xenodium/shell-maker
-;; Version: 0.82.3
+;; Version: 0.83.1
 ;; Package-Requires: ((emacs "27.1"))
 
 ;; This package is free software; you can redistribute it and/or modify
@@ -32,7 +32,7 @@
 
 ;;; Code:
 
-(defconst shell-maker-version "0.82.3")
+(defconst shell-maker-version "0.83.1")
 
 (require 'comint)
 (require 'goto-addr)
@@ -456,6 +456,14 @@ Of the form:
     (with-temp-file path
       (insert (prin1-to-string (or ring
                                    (make-ring (min 1500 comint-input-ring-size))))))))
+
+(defun shell-maker-busy ()
+  "Non-nil if shell is currently busy.
+
+Error if invoked from non-shell buffer."
+  (unless (eq major-mode (shell-maker-major-mode shell-maker--config))
+    (error "Not in a shell"))
+  shell-maker--busy)
 
 (defun shell-maker--output-at-point ()
   "Output at point range with cons of start and end."
