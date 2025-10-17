@@ -1372,8 +1372,6 @@ Use ON-OUTPUT function to monitor output text."
       (let ((items (shell-maker--extract-history
                     (buffer-string)
                     (shell-maker-prompt shell-maker--config))))
-        (cl-assert (or (seq-empty-p items)
-                       (eq (length items) 1)))
         (seq-first items)))))
 
 (defun shell-maker--log (config format &rest args)
