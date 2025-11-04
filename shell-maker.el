@@ -4,7 +4,7 @@
 
 ;; Author: Alvaro Ramirez https://xenodium.com
 ;; URL: https://github.com/xenodium/shell-maker
-;; Version: 0.83.1
+;; Version: 0.84.1
 ;; Package-Requires: ((emacs "27.1"))
 
 ;; This package is free software; you can redistribute it and/or modify
@@ -32,7 +32,7 @@
 
 ;;; Code:
 
-(defconst shell-maker-version "0.83.1")
+(defconst shell-maker-version "0.84.1")
 
 (require 'comint)
 (require 'goto-addr)
