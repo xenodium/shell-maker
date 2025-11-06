@@ -22,6 +22,8 @@ A basic shell implementation looks as follows:
                 (format "Hello \"%s\"." command))
        (funcall (map-elt shell :finish-output) t))))
 
+  (shell-maker-define-major-mode greeter-shell--config)
+
   (defun greeter-shell ()
     "Start a Greeter shell."
     (interactive)
@@ -50,6 +52,8 @@ Invoke =shell='s :write-output as many times as needed to stream responses.
   It's been %d days since I last saw you."
                      command (random 30)))
        (funcall (map-elt shell :finish-output) t))))
+
+  (shell-maker-define-major-mode greeter-shell--config)
 
   (defun greeter-shell ()
     "Start a Greeter shell."
