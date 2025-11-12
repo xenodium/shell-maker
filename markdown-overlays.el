@@ -393,7 +393,7 @@ Use START END TITLE-START TITLE-END URL-START URL-END."
                   (group
                    (or (seq "**" (group (one-or-more (not (any "\n*")))) "**")
                        (seq "__" (group (one-or-more (not (any "\n_")))) "__")))
-                  (or line-end (syntax whitespace)))
+                  (or (syntax punctuation) (syntax whitespace) line-end))
               nil t)
         (when-let ((begin (match-beginning 1))
                    (end (match-end 1)))
