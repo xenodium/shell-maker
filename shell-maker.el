@@ -1530,7 +1530,6 @@ If BACKWARDS is non-nil, move backwards."
   "Extract all commands and respective output in TEXT with PROMPT-REGEXP.
 
 Returns a list of (command . output) cons."
-  (setq text (substring-no-properties text))
   (let ((result))
     (mapc (lambda (item)
             (let* ((values (split-string item "<shell-maker-end-of-prompt>"))
