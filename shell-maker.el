@@ -153,7 +153,7 @@ For example:
   :parent comint-mode-map
   :doc "Base keymap for `shell-maker' based modes."
   "S-<return>" #'newline
-  "C-x C-s" #'shell-maker-save-session-transcript
+  "<remap> <save-buffer>" #'shell-maker-save-session-transcript
   "C-M-h" #'shell-maker-mark-output)
 
 (defun shell-maker-start (config &optional no-focus welcome-function new-session buffer-name mode-line-name)
