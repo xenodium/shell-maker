@@ -406,9 +406,9 @@ Use START END TITLE-START TITLE-END URL-START URL-END."
               'start begin
               'end end
               'text (cons (or (match-beginning 2)
-                              (match-beginning 4))
+                              (match-beginning 3))
                           (or (match-end 2)
-                              (match-end 4))))
+                              (match-end 3))))
              bolds)))))
     (nreverse bolds)))
 
