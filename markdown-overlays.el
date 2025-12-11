@@ -52,9 +52,9 @@ Experimental.  Please report issues."
   :group 'markdown-overlays)
 
 (defcustom markdown-overlays-language-mapping '(("elisp" . "emacs-lisp")
-                                               ("objective-c" . "objc")
-                                               ("objectivec" . "objc")
-                                               ("cpp" . "c++"))
+                                                ("objective-c" . "objc")
+                                                ("objectivec" . "objc")
+                                                ("cpp" . "c++"))
   "Maps external language names to Emacs names.
 
 Use only lower-case names.
@@ -89,17 +89,17 @@ Objective-C -> (\"objective-c\" . \"objc\")"
                                 source-blocks)))
     (markdown-overlays-remove)
     (dolist (block source-blocks)
-        (markdown-overlays--fontify-source-block
-         (car (map-elt block 'start))
-         (cdr (map-elt block 'start))
-         (buffer-substring-no-properties (car (map-elt block 'language))
-                                         (cdr (map-elt block 'language)))
-         (car (map-elt block 'language))
-         (cdr (map-elt block 'language))
-         (car (map-elt block 'body))
-         (cdr (map-elt block 'body))
-         (car (map-elt block 'end))
-         (cdr (map-elt block 'end))))
+      (markdown-overlays--fontify-source-block
+       (car (map-elt block 'start))
+       (cdr (map-elt block 'start))
+       (buffer-substring-no-properties (car (map-elt block 'language))
+                                       (cdr (map-elt block 'language)))
+       (car (map-elt block 'language))
+       (cdr (map-elt block 'language))
+       (car (map-elt block 'body))
+       (cdr (map-elt block 'body))
+       (car (map-elt block 'end))
+       (cdr (map-elt block 'end))))
     (when markdown-overlays-insert-dividers
       (dolist (divider (markdown-overlays--divider-markers))
         (markdown-overlays--fontify-divider (car divider) (cdr divider))))
@@ -205,14 +205,14 @@ For example \"elisp\" -> \"emacs-lisp\"."
           (downcase (string-trim language))))))
 
 (defun markdown-overlays--fontify-source-block (quotes1-start
-                                               quotes1-end
-                                               lang
-                                               lang-start
-                                               lang-end
-                                               body-start
-                                               body-end
-                                               quotes2-start
-                                               quotes2-end)
+                                                quotes1-end
+                                                lang
+                                                lang-start
+                                                lang-end
+                                                body-start
+                                                body-end
+                                                quotes2-start
+                                                quotes2-end)
   "Fontify a source block.
 Use QUOTES1-START QUOTES1-END LANG LANG-START LANG-END BODY-START
  BODY-END QUOTES2-START and QUOTES2-END."
@@ -303,19 +303,29 @@ Use QUOTES1-START QUOTES1-END LANG LANG-START LANG-END BODY-START
                        (group (one-or-more (not (any ")"))))
                        ")"))
               nil t)
-        (when-let ((begin (match-beginning 0))
-                   (end (match-end 0)))
-          (unless (seq-find (lambda (avoided)
-                              (and (>= begin (car avoided))
-                                   (<= end (cdr avoided))))
-                            avoid-ranges)
-            (push
-             (list
-              'start begin
-              'end end
-              'title (cons (match-beginning 1) (match-end 1))
-              'url (cons (match-beginning 2) (match-end 2)))
-             links)))))
+        (if-let ((begin (match-beginning 0))
+                 (end (match-end 0))
+                 (title-start (match-beginning 1))
+                 (title-end (match-end 1))
+                 (url-start (match-beginning 2))
+                 (url-end (match-end 2)))
+            (unless (seq-find (lambda (avoided)
+                                (and (>= begin (car avoided))
+                                     (<= end (cdr avoided))))
+                              avoid-ranges)
+              (push
+               (list
+                'start begin
+                'end end
+                'title (cons title-start title-end)
+                'url (cons url-start url-end))
+               links))
+          (let ((message-log-max t))
+            (message "markdown-overlays: Warning: incomplete link match at position %s: %S"
+                     (match-beginning 0)
+                     (buffer-substring-no-properties
+                      (match-beginning 0)
+                      (min (+ (match-beginning 0) 50) (point-max))))))))
     (nreverse links)))
 
 (defun markdown-overlays--markdown-headers (&optional avoid-ranges)
@@ -329,24 +339,34 @@ Use QUOTES1-START QUOTES1-END LANG LANG-START LANG-END BODY-START
                   (one-or-more space)
                   (group (one-or-more (not (any "\n")))) eol)
               nil t)
-        (when-let ((begin (match-beginning 0))
-                   (end (match-end 0)))
-          (unless (seq-find (lambda (avoided)
-                              (and (>= begin (car avoided))
-                                   (<= end (cdr avoided))))
-                            avoid-ranges)
-            (push
-             (list
-              'start begin
-              'end end
-              'level (cons (match-beginning 1) (match-end 1))
-              'title (cons (match-beginning 2) (match-end 2))
-              'needs-trailing-newline (save-excursion
-                                        (goto-char end)
-                                        (and (not (eobp))
-                                             (not (looking-at-p "\n[ \t]*$"))
-                                             (not (looking-at-p "\n\n")))))
-             headers)))))
+        (if-let ((begin (match-beginning 0))
+                 (end (match-end 0))
+                 (level-start (match-beginning 1))
+                 (level-end (match-end 1))
+                 (title-start (match-beginning 2))
+                 (title-end (match-end 2)))
+            (unless (seq-find (lambda (avoided)
+                                (and (>= begin (car avoided))
+                                     (<= end (cdr avoided))))
+                              avoid-ranges)
+              (push
+               (list
+                'start begin
+                'end end
+                'level (cons level-start level-end)
+                'title (cons title-start title-end)
+                'needs-trailing-newline (save-excursion
+                                          (goto-char end)
+                                          (and (not (eobp))
+                                               (not (looking-at-p "\n[ \t]*$"))
+                                               (not (looking-at-p "\n\n")))))
+               headers))
+          (let ((message-log-max t))
+            (message "markdown-overlays: Warning: incomplete header match at position %s: %S"
+                     (match-beginning 0)
+                     (buffer-substring-no-properties
+                      (match-beginning 0)
+                      (min (+ (match-beginning 0) 50) (point-max))))))))
     (nreverse headers)))
 
 (defun markdown-overlays--fontify-link (start end title-start title-end url-start url-end)
@@ -395,21 +415,28 @@ Use START END TITLE-START TITLE-END URL-START URL-END."
                        (seq "__" (group (one-or-more (not (any "\n_")))) "__")))
                   (or (syntax punctuation) (syntax whitespace) line-end))
               nil t)
-        (when-let ((begin (match-beginning 1))
-                   (end (match-end 1)))
-          (unless (seq-find (lambda (avoided)
-                              (and (>= begin (car avoided))
-                                   (<= end (cdr avoided))))
-                            avoid-ranges)
-            (push
-             (list
-              'start begin
-              'end end
-              'text (cons (or (match-beginning 2)
-                              (match-beginning 3))
-                          (or (match-end 2)
-                              (match-end 3))))
-             bolds)))))
+        (if-let ((begin (match-beginning 1))
+                 (end (match-end 1))
+                 (text-start (or (match-beginning 2)
+                                 (match-beginning 3)))
+                 (text-end (or (match-end 2)
+                               (match-end 3))))
+            (unless (seq-find (lambda (avoided)
+                                (and (>= begin (car avoided))
+                                     (<= end (cdr avoided))))
+                              avoid-ranges)
+              (push
+               (list
+                'start begin
+                'end end
+                'text (cons text-start text-end))
+               bolds))
+          (let ((message-log-max t))
+            (message "markdown-overlays: Warning: incomplete bold match at position %s: %S"
+                     (match-beginning 0)
+                     (buffer-substring-no-properties
+                      (match-beginning 0)
+                      (min (+ (match-beginning 0) 50) (point-max))))))))
     (nreverse bolds)))
 
 (defun markdown-overlays--markdown-italics (&optional avoid-ranges)
@@ -426,22 +453,30 @@ Use START END TITLE-START TITLE-END URL-START URL-END."
                              (group "_")
                              (group (one-or-more (not (any "\n_")))) "_")))
               nil t)
-        (when-let ((begin (match-beginning 0))
-                   (end (match-end 0)))
-          (unless (seq-find (lambda (avoided)
-                              (and (>= begin (car avoided))
-                                   (<= end (cdr avoided))))
-                            avoid-ranges)
-            (push
-             (list
-              'start (or (match-beginning 2)
-                         (match-beginning 5))
-              'end end
-              'text (cons (or (match-beginning 3)
-                              (match-beginning 6))
-                          (or (match-end 3)
-                              (match-end 6))))
-             italics)))))
+        (if-let ((begin (match-beginning 0))
+                 (end (match-end 0))
+                 (start-pos (or (match-beginning 2)
+                                (match-beginning 5)))
+                 (text-start (or (match-beginning 3)
+                                 (match-beginning 6)))
+                 (text-end (or (match-end 3)
+                               (match-end 6))))
+            (unless (seq-find (lambda (avoided)
+                                (and (>= begin (car avoided))
+                                     (<= end (cdr avoided))))
+                              avoid-ranges)
+              (push
+               (list
+                'start start-pos
+                'end end
+                'text (cons text-start text-end))
+               italics))
+          (let ((message-log-max t))
+            (message "markdown-overlays: Warning: incomplete italic match at position %s: %S"
+                     (match-beginning 0)
+                     (buffer-substring-no-properties
+                      (match-beginning 0)
+                      (min (+ (match-beginning 0) 50) (point-max))))))))
     (nreverse italics)))
 
 (defun markdown-overlays--fontify-header (_start end level-start level-end title-start title-end &optional needs-trailing-newline)
@@ -529,19 +564,26 @@ Use START END TEXT-START TEXT-END."
       (while (re-search-forward
               (rx "~~" (group (one-or-more (not (any "\n~")))) "~~")
               nil t)
-        (when-let ((begin (match-beginning 0))
-                   (end (match-end 0)))
-          (unless (seq-find (lambda (avoided)
-                              (and (>= begin (car avoided))
-                                   (<= end (cdr avoided))))
-                            avoid-ranges)
-            (push
-             (list
-              'start begin
-              'end end
-              'text (cons (match-beginning 1)
-                          (match-end 1)))
-             strikethroughs)))))
+        (if-let ((begin (match-beginning 0))
+                 (end (match-end 0))
+                 (text-start (match-beginning 1))
+                 (text-end (match-end 1)))
+            (unless (seq-find (lambda (avoided)
+                                (and (>= begin (car avoided))
+                                     (<= end (cdr avoided))))
+                              avoid-ranges)
+              (push
+               (list
+                'start begin
+                'end end
+                'text (cons text-start text-end))
+               strikethroughs))
+          (let ((message-log-max t))
+            (message "markdown-overlays: Warning: incomplete strikethrough match at position %s: %S"
+                     (match-beginning 0)
+                     (buffer-substring-no-properties
+                      (match-beginning 0)
+                      (min (+ (match-beginning 0) 50) (point-max))))))))
     (nreverse strikethroughs)))
 
 (defun markdown-overlays--fontify-strikethrough (start end text-start text-end)
@@ -572,15 +614,23 @@ Use START END TEXT-START TEXT-END."
       (while (re-search-forward
               "`\\([^`\n]+\\)`"
               nil t)
-        (when-let ((begin (match-beginning 0))
-                   (end (match-end 0)))
-          (unless (seq-find (lambda (avoided)
-                              (and (>= begin (car avoided))
-                                   (<= end (cdr avoided))))
-                            avoid-ranges)
-            (push
-             (list
-              'body (cons (match-beginning 1) (match-end 1))) codes)))))
+        (if-let ((begin (match-beginning 0))
+                 (end (match-end 0))
+                 (body-start (match-beginning 1))
+                 (body-end (match-end 1)))
+            (unless (seq-find (lambda (avoided)
+                                (and (>= begin (car avoided))
+                                     (<= end (cdr avoided))))
+                              avoid-ranges)
+              (push
+               (list
+                'body (cons body-start body-end)) codes))
+          (let ((message-log-max t))
+            (message "markdown-overlays: Warning: incomplete inline code match at position %s: %S"
+                     (match-beginning 0)
+                     (buffer-substring-no-properties
+                      (match-beginning 0)
+                      (min (+ (match-beginning 0) 50) (point-max))))))))
     (nreverse codes)))
 
 (defun markdown-overlays--fontify-inline-code (body-start body-end)
