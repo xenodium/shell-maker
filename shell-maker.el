@@ -113,11 +113,21 @@ or an absolute path like \"/usr/local/bin/curl\"."
   :type 'boolean
   :group 'shell-maker)
 
+(defcustom shell-maker-timeout 300
+  "Interval in seconds for automatically saving the shell transcript.
+If set to nil, automatic saving is disabled."
+  :type '(choice (integer :tag "Seconds")
+                 (const :tag "Disable" nil))
+  :group 'shell-maker)
+
 (defvar-local shell-maker--input nil)
 
 (defvar-local shell-maker--current-request-id 0)
 
 (defvar shell-maker--show-invisible-markers nil)
+
+(defvar-local shell-maker--save-timer nil
+  "Timer for automatically saving the shell transcript.")
 
 (defconst shell-maker--prompt-rear-nonsticky
   '(field inhibit-line-move-field-capture read-only font-lock-face)
@@ -1411,27 +1421,58 @@ Use ON-OUTPUT function to monitor output text."
   (get-buffer-process (shell-maker-buffer shell-maker--config)))
 
 (defun shell-maker-save-session-transcript ()
-  "Save shell transcript to file."
+  "Save the shell transcript to a file.
+   If `shell-maker--file` is set and `shell-maker-timeout` is not nil,
+   set up a recurring timer to automatically save the buffer every `shell-maker-timeout` seconds.
+   Does not save if the buffer has not been modified, except during the first save."
   (interactive)
+  ;; Check if in the appropriate shell buffer
   (unless (eq major-mode (shell-maker-major-mode shell-maker--config))
-    (user-error "Not in a shell"))
+    (user-error "You are not in a valid shell buffer."))
   (if shell-maker--file
-      (let ((content (buffer-string))
-            (path shell-maker--file))
-        (with-temp-buffer
-          (insert content)
-          (write-file path nil))
-        (set-buffer-modified-p nil))
-    (when-let ((path (read-file-name "Write file: "
-				     (when shell-maker-transcript-default-path
-                                       (file-name-as-directory shell-maker-transcript-default-path))
-				     nil nil (funcall shell-maker-transcript-default-filename)))
-               (content (buffer-string)))
+      ;; Subsequent saves: only if modified
+      (when (buffer-modified-p)
+	(let ((content (buffer-string))
+	      (path shell-maker--file))
+          (with-temp-buffer
+	    (insert content)
+	    (write-file path nil))
+          (set-buffer-modified-p nil)))
+    ;; First save: save regardless of `buffer-modified-p`
+    (when-let* ((path (read-file-name "Save shell transcript to: "
+                                      (when shell-maker-transcript-default-path
+					(file-name-as-directory shell-maker-transcript-default-path))
+                                      nil nil (funcall shell-maker-transcript-default-filename)))
+                (content (buffer-string))
+		(buffer (current-buffer)) ;; Capture the current buffer
+                (save-function
+                 (lambda ()
+                   (when (buffer-live-p buffer)
+                     (with-current-buffer buffer
+		       (shell-maker-save-session-transcript))))))
       (with-temp-buffer
         (insert content)
         (write-file path t))
       (setq shell-maker--file path)
-      (set-buffer-modified-p nil))))
+      (set-buffer-modified-p nil)
+
+      ;; Set up the timer if `shell-maker-timeout` is valid
+      (when shell-maker-timeout
+        (setq shell-maker--save-timer
+              (run-at-time shell-maker-timeout shell-maker-timeout
+                           save-function))
+        (message "Automatic transcript save timer set to every %s seconds" shell-maker-timeout))
+
+      ;; Add a local hook to cancel the timer when the buffer is killed
+      (add-hook 'kill-buffer-hook
+                (lambda ()
+                  (when shell-maker--save-timer
+                    (cancel-timer shell-maker--save-timer)
+                    (setq shell-maker--save-timer nil)
+                    (message "Automatic save timer canceled.")))
+                nil
+                'local)
+      )))
 
 (defun shell-maker-restore-session-from-transcript (&optional history)
   "Restore session from file transcript (or HISTORY)."
