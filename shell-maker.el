@@ -101,6 +101,13 @@ For example:
   :type 'directory
   :group 'shell-maker)
 
+(defcustom shell-maker-curl-executable "curl"
+  "Path to the curl executable.
+Can be a simple command name like \"curl\" if it's in PATH,
+or an absolute path like \"/usr/local/bin/curl\"."
+  :type 'string
+  :group 'shell-maker)
+
 (defcustom shell-maker-forget-file-after-clear nil
   "If non-nil, reset file path after clear command."
   :type 'boolean
@@ -1015,7 +1022,7 @@ and TIMEOUT: defaults to 600ms."
       (with-temp-file data-file
         (setq-local coding-system-for-write encoding)
         (insert (shell-maker--json-encode data))))
-    (append (list "curl" url
+    (append (list shell-maker-curl-executable url
                   "--fail-with-body"
                   "--no-progress-meter"
                   "-m" (number-to-string timeout))
@@ -1272,7 +1279,7 @@ returned list is of the form:
 
 (defun shell-maker--curl-version-supported ()
   "Return t if curl version is 7.76 or newer, nil otherwise."
-  (let ((curl-version-string (shell-command-to-string (concat "curl --version "))))
+  (let ((curl-version-string (shell-command-to-string (concat shell-maker-curl-executable " --version "))))
     (when (string-match "\\([0-9]+\\.[0-9]+\\.[0-9]+\\)" curl-version-string)
       (let ((version (match-string 1 curl-version-string)))
         (version<= "7.76" version)))))
