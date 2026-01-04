@@ -34,6 +34,8 @@
 
 ;;; Code:
 
+(require 'org-faces)
+
 (defcustom markdown-overlays-highlight-blocks t
   "Whether or not to highlight source blocks."
   :type 'boolean
