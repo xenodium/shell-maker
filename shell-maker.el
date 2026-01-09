@@ -160,6 +160,7 @@ or an absolute path like \"/usr/local/bin/curl\"."
   :parent comint-mode-map
   :doc "Base keymap for `shell-maker' based modes."
   "S-<return>" #'newline
+  "<remap> <rename-buffer>" #'shell-maker-rename-buffer
   "<remap> <save-buffer>" #'shell-maker-save-session-transcript
   "C-M-h" #'shell-maker-mark-output)
 
