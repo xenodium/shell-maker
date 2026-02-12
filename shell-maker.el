@@ -4,7 +4,7 @@
 
 ;; Author: Alvaro Ramirez https://xenodium.com
 ;; URL: https://github.com/xenodium/shell-maker
-;; Version: 0.84.9
+;; Version: 0.85.1
 ;; Package-Requires: ((emacs "27.1"))
 
 ;; This package is free software; you can redistribute it and/or modify
@@ -32,7 +32,7 @@
 
 ;;; Code:
 
-(defconst shell-maker-version "0.84.9")
+(defconst shell-maker-version "0.85.1")
 
 (require 'comint)
 (require 'goto-addr)
@@ -1318,6 +1318,36 @@ Use ON-OUTPUT function to monitor output text."
     (when on-output
       (funcall on-output reply))))
 
+(cl-defun shell-maker-write-output (&key config output on-output)
+  "Write OUTPUT to CONFIG shell buffer.
+
+Must be called from within the shell buffer.
+
+Use ON-OUTPUT function to monitor output text."
+  (shell-maker--write-partial-reply :config config
+                                    :reply (or output "<nil-message>")
+                                    :on-output on-output))
+
+(cl-defun shell-maker-finish-output (&key config success on-output)
+  "Finish output for CONFIG shell buffer.
+
+Must be called from within the shell buffer.
+
+SUCCESS indicates whether the command succeeded.
+Use ON-OUTPUT function to monitor output text."
+  (setq shell-maker--busy nil)
+  (let ((auto-scroll (eobp)))
+    (shell-maker--write-reply :config config
+                              :reply (save-excursion
+                                       (goto-char (point-max))
+                                       (cond ((looking-back "\n\n" nil) "")
+                                             ((looking-back "\n" nil) "\n")
+                                             (t "\n\n")))
+                              :on-output on-output
+                              :failed (not success))
+    (when auto-scroll
+      (goto-char (point-max)))))
+
 (defmacro shell-maker-with-auto-scroll-edit (&rest body)
   "Execute BODY, preserving point unless already at end of buffer."
   (save-restriction)
@@ -1949,33 +1979,18 @@ Of the form:
                                                                                  (shell-maker--current-request-id)))
                                                                 (buffer-live-p shell-buffer)))))
                                       (with-current-buffer shell-buffer
-                                        (shell-maker--write-partial-reply :config config
-                                                                          :reply output
-                                                                          :on-output on-output)))
+                                        (shell-maker-write-output :config config
+                                                                  :output output
+                                                                  :on-output on-output)))
                                     (setq full-output (concat full-output output))))
               (cons :finish-output (lambda (success)
                                      (when-let ((active (and (buffer-live-p shell-buffer)
                                                              (eq request-id (with-current-buffer shell-buffer
                                                                               (shell-maker--current-request-id))))))
                                        (with-current-buffer shell-buffer
-                                         (setq shell-maker--busy nil)
-                                         (let ((auto-scroll (eobp)))
-                                           (shell-maker--write-reply :config config
-                                                                     :reply (save-excursion
-                                                                              (goto-char (point-max))
-                                                                              ;; Command output may have ended in newlines.
-                                                                              ;; Adjust final number of added newlines
-                                                                              ;; prior to printing prompt.
-                                                                              (cond ((looking-back "\n\n" nil)
-                                                                                     "")
-                                                                                    ((looking-back "\n" nil)
-                                                                                     "\n")
-                                                                                    (t
-                                                                                     "\n\n")))
-                                                                     :on-output on-output
-                                                                     :failed (not success))
-                                           (when auto-scroll
-                                             (goto-char (point-max))))))
+                                         (shell-maker-finish-output :config config
+                                                                    :success success
+                                                                    :on-output on-output)))
                                      ;; Do not execute anything requiring a shell buffer
                                      ;; after this point, as on-finished or on-finished
                                      ;; subscribers may kill the shell buffers.
