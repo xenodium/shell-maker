@@ -40,6 +40,7 @@
 (require 'org-faces)
 (require 'url-parse)
 (require 'url-util)
+(require 'markdown-overlays-tables)
 
 (defcustom markdown-overlays-highlight-blocks t
   "Whether or not to highlight source blocks."
@@ -108,12 +109,20 @@ Return an alist with details of all overlays added:
                                   (cons (car (map-elt block 'start))
                                         (cdr (map-elt block 'end))))
                                 source-blocks))
-         (inline-codes (markdown-overlays--markdown-inline-codes source-block-ranges))
+         (tables (when (bound-and-true-p markdown-overlays-prettify-tables)
+                   (markdown-overlays--find-tables source-block-ranges)))
+         (table-ranges (seq-map (lambda (table)
+                                  (cons (map-elt table :start)
+                                        (map-elt table :end)))
+                                tables))
+         (inline-codes (markdown-overlays--markdown-inline-codes
+                        (append source-block-ranges table-ranges)))
          (inline-code-ranges (seq-map (lambda (inline)
                                         (map-elt inline 'body))
                                       inline-codes))
          (avoid-ranges (append inline-code-ranges
-                               source-block-ranges))
+                               source-block-ranges
+                               table-ranges))
          (links (markdown-overlays--markdown-links avoid-ranges))
          (images (markdown-overlays--markdown-images avoid-ranges))
          (image-file-paths (markdown-overlays--image-file-paths avoid-ranges))
@@ -189,6 +198,7 @@ Return an alist with details of all overlays added:
       (markdown-overlays--fontify-inline-code
        (car (map-elt inline-code 'body))
        (cdr (map-elt inline-code 'body))))
+    (markdown-overlays--fontify-tables tables)
     (when markdown-overlays-render-latex
       (require 'org)
       ;; Silence org-element warnings.
