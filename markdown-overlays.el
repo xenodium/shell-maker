@@ -707,7 +707,7 @@ Use START END TEXT-START TEXT-END."
                                           (not (or (> begin (cdr avoided))
                                                    (< end (car avoided)))))
                                         avoid-ranges)))
-                ;; Match overlaps an avoid range — skip past it and retry
+                ;; Match overlaps an avoid range — skip past range end and retry
                 (goto-char (1+ (cdr avoided)))
               (push
                (list
