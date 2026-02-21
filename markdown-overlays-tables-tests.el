@@ -268,6 +268,17 @@
       (should (memq 'bold (ensure-list face)))
       (should (member '(:strike-through t) (ensure-list face))))))
 
+(ert-deftest markdown-overlays-tables-test-bold-wrapping-strikethrough ()
+  "Bold wrapping strikethrough (**bold ~~struck~~ bold**) keeps both."
+  (let ((r (markdown-overlays--process-cell-content "**bold ~~struck~~ bold**")))
+    (should (string= (substring-no-properties r) "bold struck bold"))
+    ;; "bold" has bold face
+    (should (equal (get-text-property 0 'face r) 'bold))
+    ;; "struck" has both bold and strikethrough
+    (let ((face (get-text-property 5 'face r)))
+      (should (memq 'bold (ensure-list face)))
+      (should (member '(:strike-through t) (ensure-list face))))))
+
 (provide 'markdown-overlays-tables-tests)
 
 ;;; markdown-overlays-tables-tests.el ends here

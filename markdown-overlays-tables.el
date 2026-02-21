@@ -39,16 +39,17 @@
 ;;         │ Alice     │ Engineer │  (with bold and clickable link)
 ;;
 ;; Note on implementation strategy:
-;; Tables use the overlay `display' property to replace entire cell regions
-;; with formatted strings.  This differs from other markdown elements in
-;; markdown-overlays.el which use buffer overlays to hide markup while
+;; Tables use `invisible' + `before-string' overlays to replace entire
+;; rows with formatted strings.  This differs from other markdown elements
+;; in markdown-overlays.el which use buffer overlays to hide markup while
 ;; styling text in-place.
 ;;
-;; We chose the display property approach because:
+;; We chose the invisible + before-string approach because:
 ;; - Tables require precise column alignment and width control
 ;; - Cell content may wrap to multiple lines
 ;; - Unicode box-drawing characters replace ASCII pipes/dashes
-;; - A single overlay per cell is simpler than multiple hide/show overlays
+;; - Text properties (e.g. fractional-width spaces) are honoured
+;; - A single overlay per row is simpler than multiple hide/show overlays
 ;;
 ;; Trade-offs:
 ;; - Search won't find markdown syntax hidden in table cells
@@ -260,72 +261,60 @@ Pipes inside backtick code spans are not treated as delimiters."
 
 ;;; Inline Markdown Processing for Table Cells
 
-(defun markdown-overlays--apply-face-to-unpropertized (str face &optional extra-props)
-  "Apply FACE and EXTRA-PROPS to characters in STR lacking a `face' property.
+(defun markdown-overlays--apply-face-to-unpropertized (str face)
+  "Apply FACE to characters in STR lacking a `face' property.
 Characters that already have a `face' property are left untouched."
   (let ((result (copy-sequence str))
         (i 0)
         (len (length str)))
     (while (< i len)
       (unless (get-text-property i 'face result)
-        (put-text-property i (1+ i) 'face face result)
-        (when extra-props
-          (let ((p extra-props))
-            (while p
-              (put-text-property i (1+ i) (car p) (cadr p) result)
-              (setq p (cddr p))))))
+        (put-text-property i (1+ i) 'face face result))
       (setq i (1+ i)))
     result))
 
-(defun markdown-overlays--replace-markup (str regex group-num face &optional extra-props)
-  "Replace REGEX matches in STR with propertized text.
-GROUP-NUM is the capture group containing the text to keep.
-FACE is applied only to characters that lack an existing `face' property.
-Matches whose start position already has a `face' are skipped entirely
-so that their delimiter characters are preserved."
-  (let ((new-result "")
-        (pos 0))
-    (while (string-match regex str pos)
-      (let ((match-start (match-beginning 0))
-            (match-end (match-end 0)))
-        (if (get-text-property match-start 'face str)
-            ;; Already propertized — emit verbatim and advance past it.
-            (let ((prop-end (next-single-property-change
-                             match-start 'face str (length str))))
-              (setq new-result (concat new-result
-                                       (substring str pos prop-end)))
-              (setq pos prop-end))
-          (let ((styled (markdown-overlays--apply-face-to-unpropertized
-                         (match-string group-num str) face extra-props)))
-            (setq new-result (concat new-result
-                                     (substring str pos match-start)
-                                     styled))
-            (setq pos match-end)))))
-    (concat new-result (substring str pos))))
+(defun markdown-overlays--replace-markup (str regex groups face
+                                              &optional nestable prefix-group)
+  "Replace REGEX matches in STR, applying FACE to captured text.
+GROUPS is a list of capture group numbers to try; the first non-nil
+match provides the inner text whose delimiters are removed.
 
-(defun markdown-overlays--replace-markup-alt (str regex group1 group2 face)
-  "Replace REGEX matches in STR, using GROUP1 or GROUP2 for text.
-Used for patterns like **text** or __text__ where either group may match.
-FACE is applied only to characters that lack an existing `face' property.
-Matches whose start position already has a `face' are skipped entirely."
+When NESTABLE is non-nil, FACE is layered on top of any existing face
+using `add-face-text-property' (for italic/strikethrough inside bold).
+Otherwise, matches inside already-propertized regions are skipped
+entirely (protecting code spans from further processing).
+
+When PREFIX-GROUP is non-nil, that group's text is preserved verbatim
+before the styled text (used for italic's lookbehind character)."
   (let ((new-result "")
         (pos 0))
     (while (string-match regex str pos)
-      (let ((match-start (match-beginning 0))
-            (match-end (match-end 0)))
-        (if (get-text-property match-start 'face str)
+      (let* ((match-start (match-beginning 0))
+             (match-end (match-end 0))
+             (existing (get-text-property match-start 'face str))
+             (protected (and existing
+                             (if nestable
+                                 (not (memq existing '(bold italic)))
+                               t))))
+        (if protected
+            ;; Inside a protected region — emit verbatim and skip past.
             (let ((prop-end (next-single-property-change
                              match-start 'face str (length str))))
               (setq new-result (concat new-result
                                        (substring str pos prop-end)))
               (setq pos prop-end))
-          (let ((styled (markdown-overlays--apply-face-to-unpropertized
-                         (or (match-string group1 str)
-                             (match-string group2 str))
-                         face)))
+          ;; Extract inner text from first non-nil capture group
+          (let* ((inner (seq-some (lambda (g) (match-string g str)) groups))
+                 (prefix (if prefix-group (or (match-string prefix-group str) "") ""))
+                 (styled (if nestable
+                             (let ((s (copy-sequence inner)))
+                               (add-face-text-property 0 (length s) face t s)
+                               s)
+                           (markdown-overlays--apply-face-to-unpropertized
+                            inner face))))
             (setq new-result (concat new-result
                                      (substring str pos match-start)
-                                     styled))
+                                     prefix styled))
             (setq pos match-end)))))
     (concat new-result (substring str pos))))
 
@@ -338,7 +327,7 @@ bold-italic ***text***, inline code `text`, and strikethrough ~~text~~."
     ;; bold/italic processing (e.g., `**text**` should render as code).
     (setq result (markdown-overlays--replace-markup
                   result (rx "`" (group (+ (not (any "`")))) "`")
-                  1 'font-lock-doc-markup-face))
+                  '(1) 'font-lock-doc-markup-face))
 
     ;; Links need special handling for keymap.
     ;; Skip matches inside already-propertized regions (e.g. inline code).
@@ -372,69 +361,24 @@ bold-italic ***text***, inline code `text`, and strikethrough ~~text~~."
               (setq pos match-end)))))
       (setq result (concat new-result (substring result pos))))
 
-    ;; Bold-italic, bold, strikethrough
+    ;; Bold-italic, bold
     (setq result (markdown-overlays--replace-markup
                   result (rx "***" (group (+ (not (any "*")))) "***")
-                  1 '(:weight bold :slant italic)))
-    (setq result (markdown-overlays--replace-markup-alt
+                  '(1) '(:weight bold :slant italic)))
+    (setq result (markdown-overlays--replace-markup
                   result (rx (or (seq "**" (group (+? anything)) "**")
                                  (seq "__" (group (+ (not (any "_")))) "__")))
-                  1 2 'bold))
-    ;; Italic: require non-backslash char (or string start) before delimiter
-    ;; to avoid matching escaped \*text\*.
-    (let ((italic-re (rx (group (or string-start (not (any "\\"))))
-                         (or (seq "*" (group (+ (not (any "*")))) "*")
-                             (seq "_" (group (+ (not (any "_")))) "_"))))
-          (new-result "")
-          (pos 0))
-      (while (string-match italic-re result pos)
-        (let ((match-start (match-beginning 0))
-              (match-end (match-end 0))
-              (delim-pos (or (match-beginning 2) (match-beginning 3))))
-          (if (and delim-pos
-                   (> delim-pos 0)
-                   (let ((existing (get-text-property (1- delim-pos) 'face result)))
-                     (and existing
-                          ;; Skip if inside code (protected), but allow
-                          ;; nesting inside bold for bold-italic.
-                          (not (memq existing '(bold))))))
-              ;; Delimiter is inside propertized region — skip.
-              (let ((prop-end (next-single-property-change
-                               match-start 'face result (length result))))
-                (setq new-result (concat new-result
-                                         (substring result pos prop-end)))
-                (setq pos prop-end))
-            (let* ((prefix (match-string 1 result))
-                   (inner (or (match-string 2 result)
-                              (match-string 3 result)))
-                   (styled (copy-sequence inner)))
-              ;; Add italic face, preserving any existing face (e.g. bold)
-              (add-face-text-property 0 (length styled) 'italic t styled)
-              (setq new-result (concat new-result
-                                       (substring result pos match-start)
-                                       prefix styled))
-              (setq pos match-end)))))
-      (setq result (concat new-result (substring result pos))))
-    ;; Strikethrough: layer on top of existing faces (e.g. bold inside ~~)
-    (let ((strike-re (rx "~~" (group (+? anything)) "~~"))
-          (new-result "")
-          (pos 0))
-      (while (string-match strike-re result pos)
-        (let ((match-start (match-beginning 0))
-              (match-end (match-end 0)))
-          (if (get-text-property match-start 'face result)
-              (let ((prop-end (next-single-property-change
-                               match-start 'face result (length result))))
-                (setq new-result (concat new-result
-                                         (substring result pos prop-end)))
-                (setq pos prop-end))
-            (let ((styled (copy-sequence (match-string 1 result))))
-              (add-face-text-property 0 (length styled) '(:strike-through t) t styled)
-              (setq new-result (concat new-result
-                                       (substring result pos match-start)
-                                       styled))
-              (setq pos match-end)))))
-      (setq result (concat new-result (substring result pos))))
+                  '(1 2) 'bold))
+    ;; Italic: nestable inside bold, with lookbehind for escaped \*text\*
+    (setq result (markdown-overlays--replace-markup
+                  result (rx (group (or string-start (not (any "\\"))))
+                             (or (seq "*" (group (+ (not (any "*")))) "*")
+                                 (seq "_" (group (+ (not (any "_")))) "_")))
+                  '(2 3) 'italic t 1))
+    ;; Strikethrough: nestable inside bold/italic
+    (setq result (markdown-overlays--replace-markup
+                  result (rx "~~" (group (+? anything)) "~~")
+                  '(1) '(:strike-through t) t))
 
     ;; Scale tall characters to prevent uneven row heights
     (setq result (markdown-overlays--table-apply-height-scaling result))
