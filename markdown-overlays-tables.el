@@ -51,7 +51,6 @@
 ;; - A single overlay per cell is simpler than multiple hide/show overlays
 ;;
 ;; Trade-offs:
-;; - Copy/paste from tables gets the rendered text, not raw markdown
 ;; - Search won't find markdown syntax hidden in table cells
 ;; - Consistent with how wrapped/multi-line content must work anyway
 
