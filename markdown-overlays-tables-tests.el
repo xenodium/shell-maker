@@ -247,6 +247,16 @@
       (should (= (length cells) 3))
       (should (string= (string-trim (map-elt (nth 1 cells) :content)) "x \\| y")))))
 
+(ert-deftest markdown-overlays-tables-test-nested-bold-italic ()
+  "Bold wrapping italic (**bold *italic* bold**) should apply both faces."
+  (let ((r (markdown-overlays--process-cell-content "**bold with *italic* inside**")))
+    (should (string= (substring-no-properties r) "bold with italic inside"))
+    ;; "bold" region should have bold face
+    (should (equal (get-text-property 0 'face r) 'bold))
+    ;; "italic" region (chars 10-15) should have both bold and italic
+    (should (memq 'italic (ensure-list (get-text-property 10 'face r))))
+    (should (memq 'bold (ensure-list (get-text-property 10 'face r))))))
+
 (provide 'markdown-overlays-tables-tests)
 
 ;;; markdown-overlays-tables-tests.el ends here
