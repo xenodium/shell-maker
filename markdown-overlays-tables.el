@@ -415,9 +415,26 @@ bold-italic ***text***, inline code `text`, and strikethrough ~~text~~."
                                        prefix styled))
               (setq pos match-end)))))
       (setq result (concat new-result (substring result pos))))
-    (setq result (markdown-overlays--replace-markup
-                  result (rx "~~" (group (+ (not (any "~")))) "~~")
-                  1 '(:strike-through t)))
+    ;; Strikethrough: layer on top of existing faces (e.g. bold inside ~~)
+    (let ((strike-re (rx "~~" (group (+? anything)) "~~"))
+          (new-result "")
+          (pos 0))
+      (while (string-match strike-re result pos)
+        (let ((match-start (match-beginning 0))
+              (match-end (match-end 0)))
+          (if (get-text-property match-start 'face result)
+              (let ((prop-end (next-single-property-change
+                               match-start 'face result (length result))))
+                (setq new-result (concat new-result
+                                         (substring result pos prop-end)))
+                (setq pos prop-end))
+            (let ((styled (copy-sequence (match-string 1 result))))
+              (add-face-text-property 0 (length styled) '(:strike-through t) t styled)
+              (setq new-result (concat new-result
+                                       (substring result pos match-start)
+                                       styled))
+              (setq pos match-end)))))
+      (setq result (concat new-result (substring result pos))))
 
     ;; Scale tall characters to prevent uneven row heights
     (setq result (markdown-overlays--table-apply-height-scaling result))
