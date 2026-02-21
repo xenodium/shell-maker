@@ -226,23 +226,36 @@ AVOID-RANGES is a list of (start . end) cons to skip."
 
 (defun markdown-overlays--parse-table-row (start end)
   "Parse a table row between START and END into cells.
-Returns a list of alists with :start, :end, :content for each cell."
+Returns a list of alists with :start, :end, :content for each cell.
+Pipes inside backtick code spans are not treated as delimiters."
   (let ((cells '()))
     (save-excursion
       (goto-char start)
       ;; Skip leading whitespace and pipe
       (when (looking-at (rx (* (any " \t")) "|"))
         (goto-char (match-end 0)))
-      (let ((cell-start (point)))
-        ;; Find each cell delimited by |
-        (while (re-search-forward "|" end t)
-          (let ((cell-end (1- (point))))
-            (push (list (cons :start cell-start)
-                        (cons :end cell-end)
-                        (cons :content (string-trim
-                                        (buffer-substring-no-properties cell-start cell-end))))
-                  cells)
-            (setq cell-start (point))))))
+      (let ((cell-start (point))
+            (in-code nil))
+        ;; Scan character by character to respect code spans
+        (while (< (point) end)
+          (let ((ch (char-after)))
+            (cond
+             ((eq ch ?\`)
+              (setq in-code (not in-code))
+              (forward-char 1))
+             ((and (eq ch ?|) (not in-code))
+              (let ((cell-end (point)))
+                (push (list (cons :start cell-start)
+                            (cons :end cell-end)
+                            (cons :content (string-trim
+                                            (buffer-substring-no-properties cell-start cell-end))))
+                      cells)
+                (forward-char 1)
+                (setq cell-start (point))))
+             ((eq ch ?\\)
+              ;; Skip escaped character (e.g. \|)
+              (forward-char (min 2 (- end (point)))))
+             (t (forward-char 1)))))))
     (nreverse cells)))
 
 ;;; Inline Markdown Processing for Table Cells
