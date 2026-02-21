@@ -377,7 +377,7 @@ bold-italic ***text***, inline code `text`, and strikethrough ~~text~~."
                   result (rx "***" (group (+ (not (any "*")))) "***")
                   1 '(:weight bold :slant italic)))
     (setq result (markdown-overlays--replace-markup-alt
-                  result (rx (or (seq "**" (group (+ (not (any "*")))) "**")
+                  result (rx (or (seq "**" (group (+? anything)) "**")
                                  (seq "__" (group (+ (not (any "_")))) "__")))
                   1 2 'bold))
     ;; Italic: require non-backslash char (or string start) before delimiter
@@ -393,18 +393,23 @@ bold-italic ***text***, inline code `text`, and strikethrough ~~text~~."
               (delim-pos (or (match-beginning 2) (match-beginning 3))))
           (if (and delim-pos
                    (> delim-pos 0)
-                   (get-text-property (1- delim-pos) 'face result))
+                   (let ((existing (get-text-property (1- delim-pos) 'face result)))
+                     (and existing
+                          ;; Skip if inside code (protected), but allow
+                          ;; nesting inside bold for bold-italic.
+                          (not (memq existing '(bold))))))
               ;; Delimiter is inside propertized region — skip.
               (let ((prop-end (next-single-property-change
                                match-start 'face result (length result))))
                 (setq new-result (concat new-result
                                          (substring result pos prop-end)))
                 (setq pos prop-end))
-            (let ((prefix (match-string 1 result))
-                  (styled (markdown-overlays--apply-face-to-unpropertized
-                           (or (match-string 2 result)
-                               (match-string 3 result))
-                           'italic)))
+            (let* ((prefix (match-string 1 result))
+                   (inner (or (match-string 2 result)
+                              (match-string 3 result)))
+                   (styled (copy-sequence inner)))
+              ;; Add italic face, preserving any existing face (e.g. bold)
+              (add-face-text-property 0 (length styled) 'italic t styled)
               (setq new-result (concat new-result
                                        (substring result pos match-start)
                                        prefix styled))
