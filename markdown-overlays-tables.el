@@ -733,6 +733,9 @@ Before: | Name | Role |       After: │ Name  │ Role     │
                    (ov (make-overlay row-start row-end)))
               ;; Use invisible+before-string so text properties in
               ;; row-display (e.g. fractional-width spaces) are honoured.
+              (let ((lp (get-text-property row-start 'line-prefix)))
+                (when lp
+                  (put-text-property 0 (length row-display) 'line-prefix lp row-display)))
               (markdown-overlays--put ov
                                      'evaporate t
                                      'invisible 'markdown-overlays-tables
@@ -793,6 +796,11 @@ Before: | Name | Role |       After: │ Name  │ Role     │
                  (ov (make-overlay row-start row-end)))
             ;; Use invisible+before-string so text properties in
             ;; row-display (e.g. fractional-width spaces) are honoured.
+            ;; Propagate line-prefix so wrapped lines indent correctly
+            ;; even for the last row where buffer properties may differ.
+            (let ((lp (get-text-property row-start 'line-prefix)))
+              (when lp
+                (put-text-property 0 (length row-display) 'line-prefix lp row-display)))
             (markdown-overlays--put ov
                                    'evaporate t
                                    'invisible 'markdown-overlays-tables
