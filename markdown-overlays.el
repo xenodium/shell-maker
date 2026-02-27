@@ -34,6 +34,9 @@
 
 ;;; Code:
 
+(eval-when-compile
+  (require 'cl-lib))
+(require 'map)
 (require 'org-faces)
 
 (defcustom markdown-overlays-highlight-blocks t
@@ -378,6 +381,21 @@ Use QUOTES1-START QUOTES1-END LANG LANG-START LANG-END BODY-START
                       (min (+ (match-beginning 0) 50) (point-max))))))))
     (nreverse headers)))
 
+(defun markdown-overlays--open-local-link (url)
+  "Open URL as a local file link if possible.
+Return non-nil if handled, nil otherwise."
+  (when-let ((parsed (markdown-overlays--parse-local-link url)))
+    (find-file-other-window (map-elt parsed :file))
+    (when (map-elt parsed :line)
+      (goto-char (point-min))
+      (forward-line (1- (map-elt parsed :line))))
+    t))
+
+(defun markdown-overlays--open-link (url)
+  "Open URL.  Use local navigation for file links, `browse-url' otherwise."
+  (unless (markdown-overlays--open-local-link url)
+    (browse-url url)))
+
 (defun markdown-overlays--fontify-link (start end title-start title-end url-start url-end)
   "Fontify a markdown link.
 Use START END TITLE-START TITLE-END URL-START URL-END."
@@ -395,10 +413,12 @@ Use START END TITLE-START TITLE-END URL-START URL-END."
   (define-key (let ((map (make-sparse-keymap)))
                 (define-key map [mouse-1]
                             (lambda () (interactive)
-                              (browse-url (buffer-substring-no-properties url-start url-end))))
+                              (markdown-overlays--open-link
+                               (buffer-substring-no-properties url-start url-end))))
                 (define-key map (kbd "RET")
                             (lambda () (interactive)
-                              (browse-url (buffer-substring-no-properties url-start url-end))))
+                              (markdown-overlays--open-link
+                               (buffer-substring-no-properties url-start url-end))))
                 (markdown-overlays--put
                  (make-overlay title-start title-end)
                  'evaporate t
@@ -703,16 +723,26 @@ Each range is a cons of start and end integers."
         (push (cons (match-beginning 0) (match-end 0)) matches))
       (nreverse matches))))
 
-(defun markdown-overlays-make-local-file-link (filename)
+(cl-defun markdown-overlays-make-local-file-link (filename &key line)
   "Convert FILENAME to a Markdown link.
 
 Returns a string like '[file.txt](file:///absolute/path/to/file.txt)'
-if the file exists, nil otherwise."
+if the file exists, nil otherwise.
+
+When LINE is non-nil, appends #L<line> to both title and URI.
+
+For example:
+
+  (markdown-overlays-make-local-file-link \"foo.el\")
+    => \"[foo.el](file:///absolute/path/foo.el)\"
+
+  (markdown-overlays-make-local-file-link \"foo.el\" :line 10)
+    => \"[foo.el#L10](file:///absolute/path/foo.el#L10)\""
   (when (file-exists-p filename)
-    (let* ((absolute-path (expand-file-name filename))
-           (file-uri (concat "file://" absolute-path))
-           (basename (file-name-nondirectory absolute-path)))
-      (format "[%s](%s)" basename file-uri))))
+    (let ((file-uri (concat "file://" (expand-file-name filename)))
+          (basename (file-name-nondirectory (expand-file-name filename)))
+          (suffix (if line (format "#L%d" line) "")))
+      (format "[%s%s](%s%s)" basename suffix file-uri suffix))))
 
 (defun markdown-overlays-expand-local-links (markdown)
   "Expand file:// links in MARKDOWN to code blocks with file contents.
@@ -739,6 +769,61 @@ Content of file.txt
                                      (insert-file-contents filepath)
                                      (buffer-string)))))))
     (buffer-string)))
+
+(defun markdown-overlays--parse-local-link (url)
+  "Parse URL as a local file link.
+Return alist with :file and :line if URL points to an existing file.
+
+For example:
+
+  \"foo.el#L10\"              => ((:file . \"/abs/foo.el\") (:line . 10))
+  \"file:src/bar.el:5\"       => ((:file . \"/abs/src/bar.el\") (:line . 5))
+  \"file:///tmp/baz.el#L20\"  => ((:file . \"/tmp/baz.el\") (:line . 20))
+  \"file:///tmp/baz.el\"      => ((:file . \"/tmp/baz.el\") (:line . nil))
+  \"https://example.com\"     => nil"
+  (when-let ((match
+              (cond
+               ;; file:///absolute/path with optional #L123 or :123
+               ((string-match
+                 (rx bos "file://"
+                     (group (+? anything))
+                     (optional (or (seq "#L" (group (one-or-more digit)))
+                                   (seq ":" (group (one-or-more digit)))))
+                     eos)
+                 url)
+                (cons (match-string 1 url)
+                      (or (match-string 2 url) (match-string 3 url))))
+               ;; file:relative/path with optional #L123 or :123
+               ((string-match
+                 (rx bos "file:"
+                     (group (not (any "/")) (+? anything))
+                     (optional (or (seq "#L" (group (one-or-more digit)))
+                                   (seq ":" (group (one-or-more digit)))))
+                     eos)
+                 url)
+                (cons (match-string 1 url)
+                      (or (match-string 2 url) (match-string 3 url))))
+               ;; path#L123 (GitHub-style line)
+               ((string-match
+                 (rx bos
+                     (group (one-or-more (not (any ":#"))))
+                     "#L" (group (one-or-more digit))
+                     eos)
+                 url)
+                (cons (match-string 1 url) (match-string 2 url)))
+               ;; path:123 (colon line number)
+               ((string-match
+                 (rx bos
+                     (group (one-or-more (not (any ":#"))))
+                     ":" (group (one-or-more digit))
+                     eos)
+                 url)
+                (cons (match-string 1 url) (match-string 2 url)))))
+             (filepath (expand-file-name (car match))))
+    (when (file-exists-p filepath)
+      (list (cons :file filepath)
+            (cons :line (when (cdr match)
+                          (string-to-number (cdr match))))))))
 
 (provide 'markdown-overlays)
 
