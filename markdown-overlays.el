@@ -38,6 +38,8 @@
   (require 'cl-lib))
 (require 'map)
 (require 'org-faces)
+(require 'url-parse)
+(require 'url-util)
 
 (defcustom markdown-overlays-highlight-blocks t
   "Whether or not to highlight source blocks."
@@ -97,6 +99,8 @@ Return an alist with details of all overlays added:
   `bolds'         - bold text
   `italics'       - italic text
   `strikethroughs' - strikethrough text
+  `images'         - markdown image references
+  `image-file-paths' - bare image file paths on their own line
   `avoided-ranges' - list of (START . END) cons cells covering
                      source blocks and inline code spans"
   (let* ((source-blocks (markdown-overlays--source-blocks))
@@ -111,6 +115,8 @@ Return an alist with details of all overlays added:
          (avoid-ranges (append inline-code-ranges
                                source-block-ranges))
          (links (markdown-overlays--markdown-links avoid-ranges))
+         (images (markdown-overlays--markdown-images avoid-ranges))
+         (image-file-paths (markdown-overlays--image-file-paths avoid-ranges))
          (headers (markdown-overlays--markdown-headers avoid-ranges))
          (bolds (markdown-overlays--markdown-bolds avoid-ranges))
          (italics (markdown-overlays--markdown-italics avoid-ranges))
@@ -139,6 +145,19 @@ Return an alist with details of all overlays added:
        (cdr (map-elt link 'title))
        (car (map-elt link 'url))
        (cdr (map-elt link 'url))))
+    (when markdown-overlays-render-images
+      (dolist (image images)
+        (markdown-overlays--fontify-image
+         (map-elt image 'start)
+         (map-elt image 'end)
+         (car (map-elt image 'url))
+         (cdr (map-elt image 'url))))
+      (dolist (image-file-path image-file-paths)
+        (markdown-overlays--fontify-image-file-path
+         (map-elt image-file-path 'start)
+         (map-elt image-file-path 'end)
+         (car (map-elt image-file-path 'path))
+         (cdr (map-elt image-file-path 'path)))))
     (dolist (header headers)
       (markdown-overlays--fontify-header
        (map-elt header 'start)
@@ -187,6 +206,8 @@ Return an alist with details of all overlays added:
     `((source-blocks . ,source-blocks)
       (inline-codes . ,inline-codes)
       (links . ,links)
+      (images . ,images)
+      (image-file-paths . ,image-file-paths)
       (headers . ,headers)
       (bolds . ,bolds)
       (italics . ,italics)
@@ -345,10 +366,11 @@ Use QUOTES1-START QUOTES1-END LANG LANG-START LANG-END BODY-START
                  (title-end (match-end 1))
                  (url-start (match-beginning 2))
                  (url-end (match-end 2)))
-            (unless (seq-find (lambda (avoided)
-                                (and (>= begin (car avoided))
-                                     (<= end (cdr avoided))))
-                              avoid-ranges)
+            (unless (or (eq (char-before begin) ?!)
+                        (seq-find (lambda (avoided)
+                                    (and (>= begin (car avoided))
+                                         (<= end (cdr avoided))))
+                                  avoid-ranges))
               (push
                (list
                 'start begin
@@ -848,6 +870,154 @@ For example:
       (list (cons :file filepath)
             (cons :line (when (cdr match)
                           (string-to-number (cdr match))))))))
+
+;;; Images
+
+(defvar markdown-overlays-render-images t
+  "Whether or not to render inline images.
+When non-nil, markdown image syntax and bare image file paths are
+displayed as images.")
+
+(defvar markdown-overlays-image-max-width 0.4
+  "Maximum width in pixels for inline images.
+An integer value is used as pixels directly.  A float between 0 and
+1 is treated as a ratio of the window body width.")
+
+(defun markdown-overlays--markdown-images (&optional avoid-ranges)
+  "Extract markdown image references with AVOID-RANGES."
+  (let ((images '())
+        (case-fold-search nil))
+    (save-excursion
+      (goto-char (point-min))
+      (while (re-search-forward
+              (rx "!"
+                  "["
+                  (group (*? (not (any "]"))))
+                  "]"
+                  "("
+                  (group (one-or-more (not (any ")"))))
+                  ")")
+              nil t)
+        (when-let* ((begin (match-beginning 0))
+                    (end (match-end 0))
+                    (title-start (match-beginning 1))
+                    (title-end (match-end 1))
+                    (url-start (match-beginning 2))
+                    (url-end (match-end 2))
+                    ((not (seq-find (lambda (avoided)
+                                      (and (>= begin (car avoided))
+                                           (<= end (cdr avoided))))
+                                    avoid-ranges))))
+          (push
+           (list
+            'start begin
+            'end end
+            'title (cons title-start title-end)
+            'url (cons url-start url-end))
+           images))))
+    (nreverse images)))
+
+(defun markdown-overlays--image-file-paths (&optional avoid-ranges)
+  "Extract bare image file paths on their own line with AVOID-RANGES.
+Matches local paths and file:// URIs ending in a supported image
+extension.  Does not match http:// or https:// URLs.  Only paths
+that appear alone on a line (ignoring surrounding whitespace) are
+matched."
+  (when-let* ((extensions image-file-name-extensions)
+              (ext-re (concat
+                       "\\."
+                       (regexp-opt extensions t))))
+    (let ((paths '())
+          (case-fold-search t))
+      (save-excursion
+        (goto-char (point-min))
+        (while (re-search-forward
+                (concat "^[ \t]*\\(\\(?:file://\\|[/~.]\\)[^ \t\n]*"
+                        ext-re "\\)[ \t]*$")
+                nil t)
+          (let ((begin (match-beginning 0))
+                (end (match-end 0))
+                (path-start (match-beginning 1))
+                (path-end (match-end 1)))
+            (when (and (not (seq-find (lambda (avoided)
+                                        (and (>= begin (car avoided))
+                                             (<= end (cdr avoided))))
+                                      avoid-ranges))
+                       (image-supported-file-p
+                        (buffer-substring-no-properties path-start path-end))
+                       (markdown-overlays--resolve-image-url
+                        (buffer-substring-no-properties path-start path-end)))
+              (push
+               (list
+                'start begin
+                'end end
+                'path (cons path-start path-end))
+               paths)))))
+      (nreverse paths))))
+
+(defun markdown-overlays--resolve-image-url (url)
+  "Resolve image URL to a local file path or nil.
+Handles file:// URIs, absolute paths, relative paths, and ~/ paths."
+  (when-let* ((path (cond
+                     ((string-prefix-p "file://" url)
+                      (url-unhex-string
+                       (url-filename (url-generic-parse-url url))))
+                     ((string-prefix-p "file:" url)
+                      (substring url (length "file:")))
+                     ((or (file-name-absolute-p url)
+                          (string-prefix-p "~" url)
+                          (string-prefix-p "./" url)
+                          (string-prefix-p "../" url))
+                      url)))
+              (expanded (expand-file-name path))
+              ((file-exists-p expanded)))
+    expanded))
+
+(defun markdown-overlays--image-max-width ()
+  "Return the max image width in pixels.
+Resolves `markdown-overlays-image-max-width' which can be an
+integer (pixels) or a float (ratio of window body width)."
+  (if (floatp markdown-overlays-image-max-width)
+      (let ((window (or (get-buffer-window (current-buffer))
+                        (frame-first-window))))
+        (round (* markdown-overlays-image-max-width
+                  (window-body-width window t))))
+    markdown-overlays-image-max-width))
+
+(defun markdown-overlays--fontify-image (start end url-start url-end)
+  "Fontify a markdown image between START and END.
+URL-START and URL-END delimit the image URL."
+  (when-let* ((url (buffer-substring-no-properties url-start url-end))
+              (path (markdown-overlays--resolve-image-url url))
+              ((image-supported-file-p path))
+              ((display-graphic-p))
+              (image (create-image path nil nil
+                                   :max-width (markdown-overlays--image-max-width))))
+    (markdown-overlays--put
+     (make-overlay start end)
+     'evaporate t
+     'display image
+     'keymap (markdown-overlays--make-ret-binding-map
+              (lambda ()
+                (interactive)
+                (find-file path))))))
+
+(defun markdown-overlays--fontify-image-file-path (start end path-start path-end)
+  "Fontify a bare image file path between START and END.
+PATH-START and PATH-END delimit the path text."
+  (when-let* ((raw (buffer-substring-no-properties path-start path-end))
+              (path (markdown-overlays--resolve-image-url raw))
+              ((display-graphic-p))
+              (image (create-image path nil nil
+                                   :max-width (markdown-overlays--image-max-width))))
+    (markdown-overlays--put
+     (make-overlay start end)
+     'evaporate t
+     'display image
+     'keymap (markdown-overlays--make-ret-binding-map
+              (lambda ()
+                (interactive)
+                (find-file path))))))
 
 (provide 'markdown-overlays)
 
