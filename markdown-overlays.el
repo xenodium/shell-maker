@@ -87,7 +87,18 @@ Objective-C -> (\"objective-c\" . \"objc\")"
   (remove-overlays (point-min) (point-max) 'category 'markdown-overlays))
 
 (defun markdown-overlays-put ()
-  "Put all Markdown overlays."
+  "Put all Markdown overlays.
+Return an alist with details of all overlays added:
+
+  `source-blocks' - fenced code blocks
+  `inline-codes'  - inline code spans
+  `links'         - markdown links
+  `headers'       - markdown headers
+  `bolds'         - bold text
+  `italics'       - italic text
+  `strikethroughs' - strikethrough text
+  `avoided-ranges' - list of (START . END) cons cells covering
+                     source blocks and inline code spans"
   (let* ((source-blocks (markdown-overlays--source-blocks))
          (source-block-ranges (seq-map (lambda (block)
                                   (cons (car (map-elt block 'start))
@@ -98,7 +109,12 @@ Objective-C -> (\"objective-c\" . \"objc\")"
                                         (map-elt inline 'body))
                                       inline-codes))
          (avoid-ranges (append inline-code-ranges
-                               source-block-ranges)))
+                               source-block-ranges))
+         (links (markdown-overlays--markdown-links avoid-ranges))
+         (headers (markdown-overlays--markdown-headers avoid-ranges))
+         (bolds (markdown-overlays--markdown-bolds avoid-ranges))
+         (italics (markdown-overlays--markdown-italics avoid-ranges))
+         (strikethroughs (markdown-overlays--markdown-strikethroughs avoid-ranges)))
     (markdown-overlays-remove)
     (dolist (block source-blocks)
       (markdown-overlays--fontify-source-block
@@ -115,7 +131,7 @@ Objective-C -> (\"objective-c\" . \"objc\")"
     (when markdown-overlays-insert-dividers
       (dolist (divider (markdown-overlays--divider-markers))
         (markdown-overlays--fontify-divider (car divider) (cdr divider))))
-    (dolist (link (markdown-overlays--markdown-links avoid-ranges))
+    (dolist (link links)
       (markdown-overlays--fontify-link
        (map-elt link 'start)
        (map-elt link 'end)
@@ -123,7 +139,7 @@ Objective-C -> (\"objective-c\" . \"objc\")"
        (cdr (map-elt link 'title))
        (car (map-elt link 'url))
        (cdr (map-elt link 'url))))
-    (dolist (header (markdown-overlays--markdown-headers avoid-ranges))
+    (dolist (header headers)
       (markdown-overlays--fontify-header
        (map-elt header 'start)
        (map-elt header 'end)
@@ -132,19 +148,19 @@ Objective-C -> (\"objective-c\" . \"objc\")"
        (car (map-elt header 'title))
        (cdr (map-elt header 'title))
        (map-elt header 'needs-trailing-newline)))
-    (dolist (bold (markdown-overlays--markdown-bolds avoid-ranges))
+    (dolist (bold bolds)
       (markdown-overlays--fontify-bold
        (map-elt bold 'start)
        (map-elt bold 'end)
        (car (map-elt bold 'text))
        (cdr (map-elt bold 'text))))
-    (dolist (italic (markdown-overlays--markdown-italics avoid-ranges))
+    (dolist (italic italics)
       (markdown-overlays--fontify-italic
        (map-elt italic 'start)
        (map-elt italic 'end)
        (car (map-elt italic 'text))
        (cdr (map-elt italic 'text))))
-    (dolist (strikethrough (markdown-overlays--markdown-strikethroughs avoid-ranges))
+    (dolist (strikethrough strikethroughs)
       (markdown-overlays--fontify-strikethrough
        (map-elt strikethrough 'start)
        (map-elt strikethrough 'end)
@@ -167,7 +183,15 @@ Objective-C -> (\"objective-c\" . \"objc\")"
              (concat org-preview-latex-image-directory "markdown-overlays")
              (car range) (cdr range)
              temporary-file-directory
-             'overlays nil 'forbuffer org-preview-latex-default-process)))))))
+             'overlays nil 'forbuffer org-preview-latex-default-process)))))
+    `((source-blocks . ,source-blocks)
+      (inline-codes . ,inline-codes)
+      (links . ,links)
+      (headers . ,headers)
+      (bolds . ,bolds)
+      (italics . ,italics)
+      (strikethroughs . ,strikethroughs)
+      (avoided-ranges . ,avoid-ranges))))
 
 (defun markdown-overlays--match-source-block ()
   "Return a matched source block by the previous search/regexp operation."
