@@ -1990,7 +1990,9 @@ Of the form:
                                        (with-current-buffer shell-buffer
                                          (shell-maker-finish-output :config config
                                                                     :success success
-                                                                    :on-output on-output)))
+                                                                    :on-output on-output)
+                                         (when success
+                                           (shell-maker--write-input-ring-history config))))
                                      ;; Do not execute anything requiring a shell buffer
                                      ;; after this point, as on-finished or on-finished
                                      ;; subscribers may kill the shell buffers.
