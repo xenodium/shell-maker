@@ -1346,7 +1346,9 @@ Use ON-OUTPUT function to monitor output text."
                               :on-output on-output
                               :failed (not success))
     (when auto-scroll
-      (goto-char (point-max)))))
+      (goto-char (point-max))))
+  (when success
+    (shell-maker--write-input-ring-history config)))
 
 (defmacro shell-maker-with-auto-scroll-edit (&rest body)
   "Execute BODY, preserving point unless already at end of buffer."
@@ -1990,9 +1992,7 @@ Of the form:
                                        (with-current-buffer shell-buffer
                                          (shell-maker-finish-output :config config
                                                                     :success success
-                                                                    :on-output on-output)
-                                         (when success
-                                           (shell-maker--write-input-ring-history config))))
+                                                                    :on-output on-output)))
                                      ;; Do not execute anything requiring a shell buffer
                                      ;; after this point, as on-finished or on-finished
                                      ;; subscribers may kill the shell buffers.
