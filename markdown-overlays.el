@@ -431,7 +431,7 @@ Use QUOTES1-START QUOTES1-END LANG LANG-START LANG-END BODY-START
   "Open URL as a local file link if possible.
 Return non-nil if handled, nil otherwise."
   (when-let ((parsed (markdown-overlays--parse-local-link url)))
-    (find-file-other-window (map-elt parsed :file))
+    (find-file (map-elt parsed :file))
     (when (map-elt parsed :line)
       (goto-char (point-min))
       (forward-line (1- (map-elt parsed :line))))
