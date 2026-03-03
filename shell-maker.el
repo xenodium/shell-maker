@@ -1305,10 +1305,9 @@ Use ON-OUTPUT function to monitor output text."
   (unless reply
     (error "Missing reply"))
   (let ((inhibit-read-only t)
-        (shell-buffer (shell-maker-buffer config))
-        (auto-scroll (eobp)))
+        (shell-buffer (shell-maker-buffer config)))
     (with-current-buffer shell-buffer
-      (if auto-scroll
+      (if (eobp)
           (progn
             (goto-char (point-max))
             (shell-maker--output-filter (shell-maker--process) reply))
