@@ -678,7 +678,9 @@ Before: | Name | Role |       After: │ Name  │ Role     │
                                         (map-elt cell :content))))
                        (markdown-overlays--table-wrap-text processed width)))
                    cells))
-                 (max-lines (max 1 (seq-max (seq-map #'length wrapped-cells))))
+                 (max-lines (max 1 (if wrapped-cells
+                                       (seq-max (seq-map #'length wrapped-cells))
+                                     1)))
                  (pipe (if markdown-overlays--table-use-unicode-borders
                            markdown-overlays--table-border-pipe "|"))
                  (styled-pipe (propertize pipe 'face markdown-overlays--table-border-face))
