@@ -102,6 +102,7 @@ Return an alist with details of all overlays added:
   `strikethroughs' - strikethrough text
   `images'         - markdown image references
   `image-file-paths' - bare image file paths on their own line
+  `tables'         - markdown tables
   `avoided-ranges' - list of (START . END) cons cells covering
                      source blocks and inline code spans"
   (let* ((source-blocks (markdown-overlays--source-blocks))
@@ -222,6 +223,7 @@ Return an alist with details of all overlays added:
       (bolds . ,bolds)
       (italics . ,italics)
       (strikethroughs . ,strikethroughs)
+      (tables . ,tables)
       (avoided-ranges . ,avoid-ranges))))
 
 (defun markdown-overlays--match-source-block ()
