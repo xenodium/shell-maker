@@ -59,7 +59,6 @@
 
 (require 'seq)
 (require 'map)
-(require 'color)
 
 (declare-function markdown-overlays--put "markdown-overlays")
 
@@ -85,21 +84,11 @@ When non-nil, table columns are visually aligned using overlays.")
 (defvar markdown-overlays--table-zebra-stripe t
   "When non-nil, alternate row backgrounds for better readability.")
 
-(defvar markdown-overlays--table-row-underline nil
-  "When non-nil, underline the last line of each data row.")
+(defvar markdown-overlays--table-zebra-face 'lazy-highlight
+  "Face for alternating (even) rows in tables.")
 
-(defface markdown-overlays-table-zebra-face
-  '((t nil))
-  "Face for alternating (even) rows in tables.
-Colors are derived from the current theme via
-`markdown-overlays--table-setup-faces'."
-  :group 'markdown-overlays)
-
-(defface markdown-overlays-table-row-face
-  '((t nil))
-  "Face for regular (odd) data rows in tables.
-Inherits from default; no explicit colors needed."
-  :group 'markdown-overlays)
+(defvar markdown-overlays--table-row-face 'default
+  "Face for regular (odd) data rows in tables.")
 
 (defvar markdown-overlays--table-border-pipe "│"
   "Unicode vertical line for table borders.")
@@ -135,43 +124,6 @@ Inherits from default; no explicit colors needed."
       (* (any " \t"))
       line-end)
   "Regexp matching a table separator line (e.g., |---|---|).")
-
-;;; Theme-derived face setup
-
-(defvar markdown-overlays--table-faces-initialized nil
-  "Non-nil when table faces have been initialized from the theme.")
-
-;; Forward declarations for variables defined in the height-scaling section.
-(defvar markdown-overlays--table-default-line-height)
-(defvar markdown-overlays--table-height-scale-cache)
-
-(defun markdown-overlays--table-setup-faces ()
-  "Derive table face colors from the current theme.
-Computes a subtle zebra background by lightening or darkening the
-default background."
-  (let* ((bg (face-attribute 'default :background nil t))
-         (fg (face-attribute 'default :foreground nil t))
-         (dark-p (eq (frame-parameter nil 'background-mode) 'dark))
-         (zebra-bg (if dark-p
-                       (color-lighten-name bg 5)
-                     (color-darken-name bg 5))))
-    (unless (get 'markdown-overlays-table-zebra-face 'saved-face)
-      (set-face-attribute 'markdown-overlays-table-zebra-face nil
-                          :background zebra-bg
-                          :foreground fg))
-    (unless (get 'markdown-overlays-table-row-face 'saved-face)
-      (set-face-attribute 'markdown-overlays-table-row-face nil
-                          :foreground fg)))
-  (setq markdown-overlays--table-faces-initialized t))
-
-(defun markdown-overlays--table-on-theme-change (&rest _)
-  "Recompute table faces and clear height cache when the theme changes."
-  (when markdown-overlays--table-faces-initialized
-    (markdown-overlays--table-setup-faces)
-    (setq markdown-overlays--table-default-line-height nil)
-    (clrhash markdown-overlays--table-height-scale-cache)))
-
-(add-hook 'enable-theme-functions #'markdown-overlays--table-on-theme-change)
 
 ;;; Table finding
 
@@ -739,34 +691,28 @@ Before: | Name | Role |       After: │ Name  │ Role     │
                  (row-display
                   (mapconcat
                    (lambda (line-idx)
-                     (let ((is-last-line (= line-idx (1- max-lines))))
-                       (concat
-                        leading-ws
-                        styled-pipe
-                        (string-join
-                         (seq-map-indexed
-                          (lambda (_cell col-idx)
+                     (concat
+                      leading-ws
+                      styled-pipe
+                      (string-join
+                       (seq-map-indexed
+                        (lambda (_cell col-idx)
                             (let* ((cell-lines (nth col-idx wrapped-cells))
                                    (width (nth col-idx col-widths))
                                    (line (or (nth line-idx cell-lines) ""))
                                    (padded (concat " "
                                                    (markdown-overlays--pad-string line width)
                                                    " "))
-                                   (base-face (cond
-                                               (is-header markdown-overlays--table-header-face)
-                                               (is-zebra 'markdown-overlays-table-zebra-face)
-                                               (t 'markdown-overlays-table-row-face)))
-                                   (final-face (if (and markdown-overlays--table-row-underline
-                                                        is-last-line
-                                                        (not is-header))
-                                                   (list base-face '(:underline t))
-                                                 base-face)))
+                                   (face (cond
+                                          (is-header markdown-overlays--table-header-face)
+                                          (is-zebra markdown-overlays--table-zebra-face)
+                                          (t markdown-overlays--table-row-face))))
                               ;; Use add-face-text-property to preserve inline formatting
-                              (add-face-text-property 0 (length padded) final-face t padded)
+                              (add-face-text-property 0 (length padded) face t padded)
                               padded))
                           cells)
                          styled-pipe)
-                        styled-pipe)))
+                        styled-pipe))
                    (number-sequence 0 (1- max-lines))
                    "\n"))
                  ;; Create overlay for entire row (including pipes)
@@ -786,8 +732,6 @@ Before: | Name | Role |       After: │ Name  │ Role     │
 (defun markdown-overlays--fontify-tables (tables)
   "Align all markdown TABLES using display overlays."
   (when (and markdown-overlays-prettify-tables tables)
-    (unless markdown-overlays--table-faces-initialized
-      (markdown-overlays--table-setup-faces))
     (add-to-invisibility-spec 'markdown-overlays-tables)
     (dolist (table tables)
       (markdown-overlays--align-table table))))
