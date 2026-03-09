@@ -1554,33 +1554,36 @@ If BACKWARDS is non-nil, move backwards."
 (defun shell-maker-history-position ()
   "Return position in history as alist with :current and :total.
 
-Walks the buffer counting prompts instead of parsing all
-command/response text.  Much faster than `shell-maker-history'
-for callers that only need the position.
+Walks the buffer in a single pass counting valid exchanges and
+tracking which one contains point.
 
-With point on the 3rd prompt in a buffer with 5 prompts:
+With point on the 3rd exchange in a buffer with 5 exchanges:
 
   (shell-maker-history-position)
   ;; => ((:current . 3) (:total . 5))
 
-Returns nil when there are no prompts."
+Returns nil when there is no history."
   (unless (eq major-mode (shell-maker-major-mode shell-maker--config))
     (user-error "Not in a shell"))
   (let ((prompt-regexp (shell-maker-prompt-regexp shell-maker--config))
         (total 0)
-        (current nil)
+        (current 0)
         (orig (point)))
     (save-excursion
       (goto-char (point-min))
       (while (re-search-forward prompt-regexp nil t)
-        (setq total (1+ total))
-        (when (and (null current) (<= orig (point)))
-          (setq current total))))
-    (when (and (null current) (> total 0))
-      ;; Point is past the last prompt (e.g. in the last response).
-      (setq current total))
+        (let ((prompt-start (match-beginning 0))
+              (chunk-end (save-excursion
+                           (if (re-search-forward prompt-regexp nil t)
+                               (match-beginning 0)
+                             (point-max)))))
+          (when (save-excursion
+                  (search-forward "<shell-maker-end-of-prompt>" chunk-end t))
+            (setq total (1+ total))
+            (when (<= prompt-start orig)
+              (setq current total))))))
     (when (> total 0)
-      (list (cons :current current)
+      (list (cons :current (max 1 current))
             (cons :total total)))))
 
 (defun shell-maker-history ()
