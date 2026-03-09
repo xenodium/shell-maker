@@ -1410,7 +1410,6 @@ Use ON-OUTPUT function to monitor output text."
     (save-restriction
       (shell-maker-narrow-to-prompt)
       (let ((items (shell-maker--extract-history
-                    (buffer-string)
                     (shell-maker-prompt shell-maker--config))))
         (cl-assert (or (seq-empty-p items)
                        (eq (length items) 1)))
@@ -1480,7 +1479,7 @@ Use ON-OUTPUT function to monitor output text."
                       (with-temp-buffer
                         (insert-file-contents path)
                         (shell-maker--extract-history
-                         (buffer-string) (shell-maker-prompt-regexp config)))))
+                         (shell-maker-prompt-regexp config)))))
          (execute-command (shell-maker-config-execute-command
                            config))
          (validate-command (shell-maker-config-validate-command
@@ -1589,7 +1588,6 @@ Returns nil when there are no prompts."
   (unless (eq major-mode (shell-maker-major-mode shell-maker--config))
     (user-error "Not in a shell"))
   (shell-maker--extract-history
-   (buffer-string)
    (shell-maker-prompt-regexp shell-maker--config)))
 
 (cl-defun shell-maker-append-history (&key items)
@@ -1598,39 +1596,66 @@ Returns nil when there are no prompts."
    (append (shell-maker-history)
            items)))
 
-(defun shell-maker--extract-history (text prompt-regexp)
-  "Extract all commands and respective output in TEXT with PROMPT-REGEXP.
+(defun shell-maker--extract-history (prompt-regexp)
+  "Extract command/response history by walking the current buffer.
 
-Returns a list of (command . output) cons."
-  (let ((result))
-    (mapc (lambda (item)
-            (let* ((values (split-string item "<shell-maker-end-of-prompt>"))
-                   (lines (split-string item "\n"))
-                   (prompt (string-trim (nth 0 values)))
-                   (response (string-trim (progn
-                                            (if (> (length values) 1)
-                                                (nth 1 values)
-                                              (string-join
-                                               (cdr lines) "\n"))))))
-              (when (or (not (string-match "<shell-maker-failed-command>" response))
-                        (string-match "<shell-maker-interrupted-command>" response))
-                (setq response (string-trim (replace-regexp-in-string
-                                             "<shell-maker-[^>]+>" ""
-                                             response)))
-                (setq prompt (string-trim (replace-regexp-in-string
-                                           "<shell-maker-[^>]+>" ""
-                                           prompt)))
-                (when (or (not (string-empty-p prompt))
-                          (not (string-empty-p response)))
-                  (push (cons (if (string-empty-p prompt)
-                                  nil
-                                prompt)
-                              (if (string-empty-p response)
-                                  nil
-                                response))
-                        result)))))
-          (split-string text prompt-regexp))
+Walks the buffer with `re-search-forward' to find prompt boundaries,
+extracting each exchange as a small substring.
+
+Returns a list of (command . response) cons.
+
+In a buffer with:
+
+  Agent> hello
+  <shell-maker-end-of-prompt>Hi there
+  Agent> bye
+  <shell-maker-end-of-prompt>Goodbye
+
+  (shell-maker--extract-history \"^Agent> \")
+  ;; => ((\"hello\" . \"Hi there\") (\"bye\" . \"Goodbye\"))"
+  (let (result)
+    (save-excursion
+      (goto-char (point-min))
+      (while (re-search-forward prompt-regexp nil t)
+        (when-let ((parsed (shell-maker--parse-history-chunk
+                            (buffer-substring
+                             (point)
+                             (save-excursion
+                               (if (re-search-forward prompt-regexp nil t)
+                                   (match-beginning 0)
+                                 (point-max)))))))
+          (push parsed result))))
     (nreverse result)))
+
+(defun shell-maker--parse-history-chunk (chunk)
+  "Parse a single exchange CHUNK into a (command . response) cons.
+
+CHUNK is the text between two prompts, containing the command,
+a `<shell-maker-end-of-prompt>' marker, and the response.
+
+  (shell-maker--parse-history-chunk
+   \"hello<shell-maker-end-of-prompt>Hi there\")
+  ;; => (\"hello\" . \"Hi there\")
+
+Returns nil if the exchange should be excluded (failed commands)
+or if both command and response are empty."
+  (let* ((values (split-string chunk "<shell-maker-end-of-prompt>"))
+         (command (string-trim (car values)))
+         (response (string-trim
+                    (if (> (length values) 1)
+                        (nth 1 values)
+                      (string-join
+                       (cdr (split-string chunk "\n")) "\n")))))
+    (when (or (not (string-match "<shell-maker-failed-command>" response))
+              (string-match "<shell-maker-interrupted-command>" response))
+      (setq response (string-trim (replace-regexp-in-string
+                                   "<shell-maker-[^>]+>" "" response)))
+      (setq command (string-trim (replace-regexp-in-string
+                                  "<shell-maker-[^>]+>" "" command)))
+      (when (or (not (string-empty-p command))
+                (not (string-empty-p response)))
+        (cons (unless (string-empty-p command) command)
+              (unless (string-empty-p response) response))))))
 
 (defun shell-maker--output-filter (process string)
   "Copy of `comint-output-filter' but avoids fontifying non-prompt text.
@@ -1993,10 +2018,9 @@ Of the form:
          (shell-buffer (shell-maker-buffer shell-maker--config))
          (executor (shell-maker-config-execute-command config))
          (history (butlast
-                   (shell-maker--extract-history
-                    (with-current-buffer shell-buffer
-                      (buffer-string))
-                    (shell-maker-prompt-regexp config))))
+                   (with-current-buffer shell-buffer
+                     (shell-maker--extract-history
+                      (shell-maker-prompt-regexp config)))))
          (full-output))
     (funcall executor input
              ;; shell attributes exposed to command executors.
