@@ -63,11 +63,9 @@
 
 (declare-function markdown-overlays--put "markdown-overlays")
 
-(defcustom markdown-overlays-prettify-tables t
+(defvar markdown-overlays-prettify-tables t
   "Whether or not to prettify markdown table columns.
-When non-nil, table columns are visually aligned using overlays."
-  :type 'boolean
-  :group 'markdown-overlays)
+When non-nil, table columns are visually aligned using overlays.")
 
 (defvar markdown-overlays--table-header-face 'bold
   "Face to apply to table header row content.")
@@ -419,7 +417,7 @@ it down to the default line height.  Results are cached."
              (let ((win (selected-window))
                    (orig-buf (window-buffer)))
                (unwind-protect
-                   (let* ((default-h
+                   (let ((default-h
                            (or markdown-overlays--table-default-line-height
                                (setq markdown-overlays--table-default-line-height
                                      (with-temp-buffer
@@ -702,11 +700,10 @@ Before: | Name | Role |       After: │ Name  │ Role     │
                      leading-ws
                      (propertize pipe-left 'face markdown-overlays--table-border-face)
                      (mapconcat
-                      (lambda (idx)
-                        (propertize (markdown-overlays--make-table-separator-cell
-                                     (+ (nth idx col-widths) 2))
+                      (lambda (w)
+                        (propertize (markdown-overlays--make-table-separator-cell (+ w 2))
                                     'face markdown-overlays--table-border-face))
-                      (number-sequence 0 (1- (length col-widths)))
+                      col-widths
                       (propertize pipe 'face markdown-overlays--table-border-face))
                      (propertize pipe-right 'face markdown-overlays--table-border-face)))
                    (ov (make-overlay row-start row-end)))
@@ -746,27 +743,28 @@ Before: | Name | Role |       After: │ Name  │ Role     │
                        (concat
                         leading-ws
                         styled-pipe
-                        (mapconcat
-                         (lambda (col-idx)
-                           (let* ((cell-lines (nth col-idx wrapped-cells))
-                                  (width (nth col-idx col-widths))
-                                  (line (or (nth line-idx cell-lines) ""))
-                                  (padded (concat " "
-                                                  (markdown-overlays--pad-string line width)
-                                                  " "))
-                                  (base-face (cond
-                                              (is-header markdown-overlays--table-header-face)
-                                              (is-zebra 'markdown-overlays-table-zebra-face)
-                                              (t 'markdown-overlays-table-row-face)))
-                                  (final-face (if (and markdown-overlays--table-row-underline
-                                                       is-last-line
-                                                       (not is-header))
-                                                  (list base-face '(:underline t))
-                                                base-face)))
-                             ;; Use add-face-text-property to preserve inline formatting
-                             (add-face-text-property 0 (length padded) final-face t padded)
-                             padded))
-                         (number-sequence 0 (1- (length cells)))
+                        (string-join
+                         (seq-map-indexed
+                          (lambda (_cell col-idx)
+                            (let* ((cell-lines (nth col-idx wrapped-cells))
+                                   (width (nth col-idx col-widths))
+                                   (line (or (nth line-idx cell-lines) ""))
+                                   (padded (concat " "
+                                                   (markdown-overlays--pad-string line width)
+                                                   " "))
+                                   (base-face (cond
+                                               (is-header markdown-overlays--table-header-face)
+                                               (is-zebra 'markdown-overlays-table-zebra-face)
+                                               (t 'markdown-overlays-table-row-face)))
+                                   (final-face (if (and markdown-overlays--table-row-underline
+                                                        is-last-line
+                                                        (not is-header))
+                                                   (list base-face '(:underline t))
+                                                 base-face)))
+                              ;; Use add-face-text-property to preserve inline formatting
+                              (add-face-text-property 0 (length padded) final-face t padded)
+                              padded))
+                          cells)
                          styled-pipe)
                         styled-pipe)))
                    (number-sequence 0 (1- max-lines))

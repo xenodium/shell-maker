@@ -109,7 +109,7 @@ Return an alist with details of all overlays added:
                                   (cons (car (map-elt block 'start))
                                         (cdr (map-elt block 'end))))
                                 source-blocks))
-         (tables (when (bound-and-true-p markdown-overlays-prettify-tables)
+         (tables (when markdown-overlays-prettify-tables
                    (markdown-overlays--find-tables source-block-ranges)))
          (table-ranges (seq-map (lambda (table)
                                   (cons (map-elt table :start)
