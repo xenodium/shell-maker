@@ -187,26 +187,31 @@ Pipes inside backtick code spans are not treated as delimiters."
         (goto-char (match-end 0)))
       (let ((cell-start (point))
             (in-code nil))
-        ;; Scan character by character to respect code spans
         (while (< (point) end)
-          (let ((ch (char-after)))
-            (cond
-             ((eq ch ?\`)
-              (setq in-code (not in-code))
-              (forward-char 1))
-             ((and (eq ch ?|) (not in-code))
-              (let ((cell-end (point)))
-                (push (list (cons :start cell-start)
-                            (cons :end cell-end)
-                            (cons :content (string-trim
-                                            (buffer-substring-no-properties cell-start cell-end))))
-                      cells)
-                (forward-char 1)
-                (setq cell-start (point))))
-             ((eq ch ?\\)
-              ;; Skip escaped character (e.g. \|)
-              (forward-char (min 2 (- end (point)))))
-             (t (forward-char 1)))))))
+          (if in-code
+              ;; Inside code span — scan char-by-char for closing backtick.
+              (if (eq (char-after) ?\`)
+                  (progn (setq in-code nil) (forward-char 1))
+                (forward-char 1))
+            ;; Outside code — jump to next delimiter.
+            (if (re-search-forward (rx (any "|`\\")) (line-end-position) t)
+                (let ((ch (char-before)))
+                  (cond
+                   ((eq ch ?|)
+                    (let ((cell-end (1- (point))))
+                      (push (list (cons :start cell-start)
+                                  (cons :end cell-end)
+                                  (cons :content (string-trim
+                                                  (buffer-substring-no-properties
+                                                   cell-start cell-end))))
+                            cells)
+                      (setq cell-start (point))))
+                   ((eq ch ?\`)
+                    (setq in-code t))
+                   ((eq ch ?\\)
+                    ;; Skip escaped character
+                    (when (< (point) end) (forward-char 1)))))
+              (goto-char end))))))
     (nreverse cells)))
 
 ;;; Inline Markdown Processing for Table Cells
@@ -236,7 +241,7 @@ entirely (protecting code spans from further processing).
 
 When PREFIX-GROUP is non-nil, that group's text is preserved verbatim
 before the styled text (used for italic's lookbehind character)."
-  (let ((new-result "")
+  (let ((parts nil)
         (pos 0))
     (while (string-match regex str pos)
       (let* ((match-start (match-beginning 0))
@@ -250,8 +255,7 @@ before the styled text (used for italic's lookbehind character)."
             ;; Inside a protected region — emit verbatim and skip past.
             (let ((prop-end (next-single-property-change
                              match-start 'face str (length str))))
-              (setq new-result (concat new-result
-                                       (substring str pos prop-end)))
+              (push (substring str pos prop-end) parts)
               (setq pos prop-end))
           ;; Extract inner text from first non-nil capture group
           (let* ((inner (seq-some (lambda (g) (match-string g str)) groups))
@@ -262,78 +266,84 @@ before the styled text (used for italic's lookbehind character)."
                                s)
                            (markdown-overlays--apply-face-to-unpropertized
                             inner face))))
-            (setq new-result (concat new-result
-                                     (substring str pos match-start)
-                                     prefix styled))
+            (push (substring str pos match-start) parts)
+            (unless (string-empty-p prefix)
+              (push prefix parts))
+            (push styled parts)
             (setq pos match-end)))))
-    (concat new-result (substring str pos))))
+    (push (substring str pos) parts)
+    (apply #'concat (nreverse parts))))
 
 (defun markdown-overlays--process-cell-content (content)
   "Process markdown syntax in CONTENT string, returning propertized string.
 Handles: links [text](url), bold **text**/__text__, italic *text*/_text_,
 bold-italic ***text***, inline code `text`, and strikethrough ~~text~~."
-  (let ((result content))
-    ;; Process inline code FIRST so its contents are protected from
-    ;; bold/italic processing (e.g., `**text**` should render as code).
-    (setq result (markdown-overlays--replace-markup
-                  result (rx "`" (group (+ (not (any "`")))) "`")
-                  '(1) 'font-lock-doc-markup-face))
+  ;; Skip all regex processing for plain cells (no markdown syntax).
+  (if (string-match-p (rx (any "*`~[")) content)
+    (let ((result content))
+      ;; Process inline code FIRST so its contents are protected from
+      ;; bold/italic processing (e.g., `**text**` should render as code).
+      (setq result (markdown-overlays--replace-markup
+                    result (rx "`" (group (+ (not (any "`")))) "`")
+                    '(1) 'font-lock-doc-markup-face))
 
-    ;; Links need special handling for keymap.
-    ;; Skip matches inside already-propertized regions (e.g. inline code).
-    (let ((link-re (rx "[" (group (+ (not (any "]")))) "]("
-                       (group (+ (not (any ")")))) ")"))
-          (new-result "")
-          (pos 0))
-      (while (string-match link-re result pos)
-        (let ((match-start (match-beginning 0))
-              (match-end (match-end 0)))
-          (if (get-text-property match-start 'face result)
-              (let ((prop-end (next-single-property-change
-                               match-start 'face result (length result))))
-                (setq new-result (concat new-result
-                                         (substring result pos prop-end)))
-                (setq pos prop-end))
-            (let ((title (match-string 1 result))
-                  (url (match-string 2 result))
-                  (link-map (make-sparse-keymap)))
-              (setq new-result (concat new-result (substring result pos match-start)))
-              (define-key link-map [mouse-1]
-                          (lambda () (interactive) (browse-url url)))
-              (define-key link-map (kbd "RET")
-                          (lambda () (interactive) (browse-url url)))
-              (setq new-result (concat new-result
-                                       (propertize title
-                                                   'face 'link
-                                                   'mouse-face 'highlight
-                                                   'keymap link-map
-                                                   'help-echo url)))
-              (setq pos match-end)))))
-      (setq result (concat new-result (substring result pos))))
+      ;; Links need special handling for keymap.
+      ;; Skip matches inside already-propertized regions (e.g. inline code).
+      (let ((link-re (rx "[" (group (+ (not (any "]")))) "]("
+                         (group (+ (not (any ")")))) ")"))
+            (parts nil)
+            (pos 0))
+        (while (string-match link-re result pos)
+          (let ((match-start (match-beginning 0))
+                (match-end (match-end 0)))
+            (if (get-text-property match-start 'face result)
+                (let ((prop-end (next-single-property-change
+                                 match-start 'face result (length result))))
+                  (push (substring result pos prop-end) parts)
+                  (setq pos prop-end))
+              (let ((title (match-string 1 result))
+                    (url (match-string 2 result))
+                    (link-map (make-sparse-keymap)))
+                (push (substring result pos match-start) parts)
+                (define-key link-map [mouse-1]
+                            (lambda () (interactive) (browse-url url)))
+                (define-key link-map (kbd "RET")
+                            (lambda () (interactive) (browse-url url)))
+                (push (propertize title
+                                  'face 'link
+                                  'mouse-face 'highlight
+                                  'keymap link-map
+                                  'help-echo url)
+                      parts)
+                (setq pos match-end)))))
+        (push (substring result pos) parts)
+        (setq result (apply #'concat (nreverse parts))))
 
-    ;; Bold-italic, bold
-    (setq result (markdown-overlays--replace-markup
-                  result (rx "***" (group (+ (not (any "*")))) "***")
-                  '(1) '(:weight bold :slant italic)))
-    (setq result (markdown-overlays--replace-markup
-                  result (rx (or (seq "**" (group (+? anything)) "**")
-                                 (seq "__" (group (+ (not (any "_")))) "__")))
-                  '(1 2) 'bold))
-    ;; Italic: nestable inside bold, with lookbehind for escaped \*text\*
-    (setq result (markdown-overlays--replace-markup
-                  result (rx (group (or string-start (not (any "\\"))))
-                             (or (seq "*" (group (+ (not (any "*")))) "*")
-                                 (seq "_" (group (+ (not (any "_")))) "_")))
-                  '(2 3) 'italic t 1))
-    ;; Strikethrough: nestable inside bold/italic
-    (setq result (markdown-overlays--replace-markup
-                  result (rx "~~" (group (+? anything)) "~~")
-                  '(1) '(:strike-through t) t))
+      ;; Bold-italic, bold
+      (setq result (markdown-overlays--replace-markup
+                    result (rx "***" (group (+ (not (any "*")))) "***")
+                    '(1) '(:weight bold :slant italic)))
+      (setq result (markdown-overlays--replace-markup
+                    result (rx (or (seq "**" (group (+? anything)) "**")
+                                   (seq "__" (group (+ (not (any "_")))) "__")))
+                    '(1 2) 'bold))
+      ;; Italic: nestable inside bold, with lookbehind for escaped \*text\*
+      (setq result (markdown-overlays--replace-markup
+                    result (rx (group (or string-start (not (any "\\"))))
+                               (or (seq "*" (group (+ (not (any "*")))) "*")
+                                   (seq "_" (group (+ (not (any "_")))) "_")))
+                    '(2 3) 'italic t 1))
+      ;; Strikethrough: nestable inside bold/italic
+      (setq result (markdown-overlays--replace-markup
+                    result (rx "~~" (group (+? anything)) "~~")
+                    '(1) '(:strike-through t) t))
 
-    ;; Scale tall characters to prevent uneven row heights
-    (setq result (markdown-overlays--table-apply-height-scaling result))
+      ;; Scale tall characters to prevent uneven row heights
+      (setq result (markdown-overlays--table-apply-height-scaling result))
 
-    result))
+      result)
+    ;; Plain text — skip all regex processing.
+    (markdown-overlays--table-apply-height-scaling content)))
 
 ;;; Glyph Height Normalization
 ;;
@@ -363,9 +373,8 @@ scripts with tall ascenders/descenders like Arabic (~0.63).")
 Measures actual line height and returns a scale factor that brings
 it down to the default line height.  Results are cached."
   (let ((cached (gethash char markdown-overlays--table-height-scale-cache 'miss)))
-    (if (not (eq cached 'miss))
-        cached
-      (let ((scale
+    (if (eq cached 'miss)
+        (let ((scale
              (let ((win (selected-window))
                    (orig-buf (window-buffer)))
                (unwind-protect
@@ -405,30 +414,38 @@ it down to the default line height.  Results are cached."
                            best))))
                  (set-window-buffer win orig-buf)))))
         (puthash char scale markdown-overlays--table-height-scale-cache)
-        scale))))
+        scale)
+      cached)))
 
 (defun markdown-overlays--table-apply-height-scaling (str)
   "Add display height scaling to any tall characters in STR.
 Returns a new string with (display (height N)) on glyphs that
 would otherwise cause uneven row heights.  Handles emoji, CJK,
 and any other characters that render taller than the default."
-  (let ((result (copy-sequence str))
-        (len (length str)))
-    (dotimes (i len)
-      (let* ((ch (aref result i))
-             (scale (markdown-overlays--table-char-height-scale ch)))
-        ;; Also scale base char before a variation selector
-        (unless scale
-          (when (and (< (1+ i) len)
-                     (= (aref result (1+ i)) #xFE0F))
-            (setq scale (markdown-overlays--table-char-height-scale #xFE0F))))
-        (when scale
-          (put-text-property i (1+ i) 'display
-                             `(height ,scale)
-                             result))))
-    result))
+  ;; ASCII characters never render taller than the default line height,
+  ;; so skip the per-character scaling loop for ASCII-only strings.
+  (if (string-match-p (rx bos (* ascii) eos) str)
+      str
+    (let ((result (copy-sequence str))
+          (len (length str)))
+      (dotimes (i len)
+        (let* ((ch (aref result i))
+               (scale (markdown-overlays--table-char-height-scale ch)))
+          ;; Also scale base char before a variation selector
+          (unless scale
+            (when (and (< (1+ i) len)
+                       (= (aref result (1+ i)) #xFE0F))
+              (setq scale (markdown-overlays--table-char-height-scale #xFE0F))))
+          (when scale
+            (put-text-property i (1+ i) 'display
+                               `(height ,scale)
+                               result))))
+      result)))
 
 ;;; Column Width Computation
+
+(defvar markdown-overlays--table-char-pixel-width nil
+  "Cached pixel width of a single space character.")
 
 (defun markdown-overlays--table-display-width (str)
   "Return display width of STR in character units.
@@ -436,8 +453,14 @@ Uses pixel measurements to detect characters that render wider than
 `string-width' reports (e.g., emoji).  `string-pixel-width' respects
 display properties like (height N) set by height scaling.
 Falls back to `string-width' if `string-pixel-width' is unavailable."
-  (if (fboundp 'string-pixel-width)
-      (let ((char-px (string-pixel-width " "))
+  ;; ASCII characters render at exactly 1 × space-pixel-width, so
+  ;; `string-width' matches pixel measurement.  Non-ASCII (emoji, CJK)
+  ;; can render wider, requiring expensive `string-pixel-width'.
+  (if (and (fboundp 'string-pixel-width)
+           (not (string-match-p (rx bos (* ascii) eos) str)))
+      (let ((char-px (or markdown-overlays--table-char-pixel-width
+                         (setq markdown-overlays--table-char-pixel-width
+                               (string-pixel-width " "))))
             (actual-px (string-pixel-width str)))
         (ceiling (/ (float actual-px) char-px)))
     (string-width str)))
@@ -482,9 +505,14 @@ where each processed-cell is the propertized string from `process-cell-content'.
   "Return display width of longest word in STR."
   (if (or (null str) (string-empty-p str))
       0
+    ;; ASCII renders at exactly 1 × space-pixel-width per char,
+    ;; so cheap `string-width' matches pixel measurement per word.
     (let ((words (split-string str "[ \t\n]+" t)))
       (if words
-          (apply #'max (mapcar #'markdown-overlays--table-display-width words))
+          (apply #'max (mapcar (if (string-match-p (rx bos (* ascii) eos) str)
+                                   #'string-width
+                                 #'markdown-overlays--table-display-width)
+                               words))
         0))))
 
 (defun markdown-overlays--table-total-width (widths)
@@ -556,8 +584,14 @@ Preserves text properties across wrapped lines."
   "Pad STR with spaces to reach WIDTH.
 Uses pixel measurements when available to compensate for characters
 that render wider than `string-width' reports (e.g., emoji)."
-  (if (fboundp 'string-pixel-width)
-      (let* ((char-px (string-pixel-width " "))
+  ;; ASCII characters render at exactly 1 × space-pixel-width, so
+  ;; column-based padding is pixel-perfect.  Non-ASCII (emoji, CJK)
+  ;; can render wider, requiring pixel-based padding with fractional spaces.
+  (if (and (fboundp 'string-pixel-width)
+           (not (string-match-p (rx bos (* ascii) eos) str)))
+      (let* ((char-px (or markdown-overlays--table-char-pixel-width
+                          (setq markdown-overlays--table-char-pixel-width
+                                (string-pixel-width " "))))
              (target-px (* width char-px))
              (actual-px (string-pixel-width str))
              (pad-px (- target-px actual-px)))
@@ -570,7 +604,7 @@ that render wider than `string-width' reports (e.g., emoji)."
                     (if (> remaining 0.01)
                         (propertize " " 'display `(space :width ,remaining))
                       "")))))
-    ;; Fallback for older Emacs
+    ;; ASCII-only or older Emacs — string-width is accurate.
     (let ((current-width (string-width str)))
       (if (>= current-width width)
           str
@@ -663,15 +697,23 @@ Before: | Name | Role |       After: │ Name  │ Role     │
                                      'before-string row-display))
 
           ;; Content row — use pre-processed cell content
-          (let* ((wrapped-cells
-                  (let ((idx 0) result)
-                    (dolist (processed processed-cells (nreverse result))
-                      (let ((width (or (nth idx col-widths) 10)))
-                        (push (markdown-overlays--table-wrap-text processed width) result)
-                        (setq idx (1+ idx))))))
-                 (max-lines (max 1 (if wrapped-cells
-                                       (apply #'max (mapcar #'length wrapped-cells))
-                                     1)))
+          (let* ((ncols (length processed-cells))
+                 (wrapped-cells-vec
+                  (let ((idx 0)
+                        (vec (make-vector ncols nil)))
+                    (dolist (processed processed-cells)
+                      (aset vec idx
+                            (vconcat
+                             (markdown-overlays--table-wrap-text
+                              processed (or (nth idx col-widths) 10))))
+                      (setq idx (1+ idx)))
+                    vec))
+                 (col-widths-vec (vconcat col-widths))
+                 (max-lines (let ((m 0) (i 0))
+                                     (while (< i ncols)
+                                       (setq m (max m (length (aref wrapped-cells-vec i)))
+                                             i (1+ i)))
+                                     (max 1 m)))
                  (pipe (if markdown-overlays--table-use-unicode-borders
                            markdown-overlays--table-border-pipe "|"))
                  (styled-pipe (propertize pipe 'face markdown-overlays--table-border-face))
@@ -680,34 +722,31 @@ Before: | Name | Role |       After: │ Name  │ Role     │
                                (goto-char row-start)
                                (if (looking-at (rx line-start (* (any " \t"))))
                                    (match-string 0) "")))
-                 (ncols (length processed-cells))
+                 (face (cond
+                        (is-header markdown-overlays--table-header-face)
+                        (is-zebra markdown-overlays--table-zebra-face)
+                        (t markdown-overlays--table-row-face)))
                  ;; Build multi-line display string for entire row
                  (row-display
-                  (mapconcat
-                   (lambda (line-idx)
-                     (concat
-                      leading-ws
-                      styled-pipe
-                      (let ((col-idx 0) parts)
-                        (while (< col-idx ncols)
-                          (let* ((cell-lines (nth col-idx wrapped-cells))
-                                 (width (nth col-idx col-widths))
-                                 (line (or (nth line-idx cell-lines) ""))
+                  (let ((lines nil))
+                    (dotimes (line-idx max-lines)
+                      (let ((parts nil))
+                        (dotimes (col-idx ncols)
+                          (let* ((cell-lines (aref wrapped-cells-vec col-idx))
+                                 (line (if (< line-idx (length cell-lines))
+                                           (aref cell-lines line-idx) ""))
                                  (padded (concat " "
-                                                 (markdown-overlays--pad-string line width)
-                                                 " "))
-                                 (face (cond
-                                        (is-header markdown-overlays--table-header-face)
-                                        (is-zebra markdown-overlays--table-zebra-face)
-                                        (t markdown-overlays--table-row-face))))
+                                                 (markdown-overlays--pad-string
+                                                  line (aref col-widths-vec col-idx))
+                                                 " ")))
                             ;; Use add-face-text-property to preserve inline formatting
                             (add-face-text-property 0 (length padded) face t padded)
-                            (push padded parts))
-                          (setq col-idx (1+ col-idx)))
-                        (string-join (nreverse parts) styled-pipe))
-                      styled-pipe))
-                   (number-sequence 0 (1- max-lines))
-                   "\n"))
+                            (push padded parts)))
+                        (push (concat leading-ws styled-pipe
+                                      (string-join (nreverse parts) styled-pipe)
+                                      styled-pipe)
+                              lines)))
+                    (mapconcat #'identity (nreverse lines) "\n")))
                  ;; Create overlay for entire row (including pipes)
                  (ov (make-overlay row-start row-end)))
             ;; Use invisible+before-string so text properties in
