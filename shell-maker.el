@@ -228,6 +228,7 @@ Set MODE-LINE-NAME to override the mode line name."
           (when welcome-message
             (insert welcome-message)
             (insert (propertize "\n<shell-maker-failed-command>\n"
+                                'shell-maker--marker t
                                 'invisible (not shell-maker--show-invisible-markers))))
           (shell-maker--initialize config)))
       (unless no-focus
@@ -517,6 +518,20 @@ Error if invoked from non-shell buffer."
       (user-error "Not available"))
     (cons start end)))
 
+(defun shell-maker--re-search-forward-prompt (prompt-regexp &optional bound)
+  "Search forward for a real prompt matching PROMPT-REGEXP before BOUND.
+
+Skips matches in response content by verifying that the matched
+text has `comint-highlight-prompt' face."
+  (let (found)
+    (while (and (not found)
+                (re-search-forward prompt-regexp bound t))
+      (when (memq 'comint-highlight-prompt
+                  (ensure-list
+                   (get-text-property (match-beginning 0) 'font-lock-face)))
+        (setq found t)))
+    found))
+
 (defun shell-maker-narrow-to-prompt ()
   "Narrow buffer to the command line (and any following command output) at point."
   (interactive)
@@ -525,7 +540,8 @@ Error if invoked from non-shell buffer."
      begin
      (save-excursion
        (goto-char (shell-maker--prompt-end-position))
-       (re-search-forward (shell-maker-prompt-regexp shell-maker--config) nil t)
+       (shell-maker--re-search-forward-prompt
+        (shell-maker-prompt-regexp shell-maker--config))
        (if (= begin (shell-maker--prompt-begin-position))
            (point-max)
          (shell-maker--prompt-begin-position))))))
@@ -669,6 +685,7 @@ With prefix TREAT-AS-FAILURE, mark as failed."
     (unless treat-as-failure
       (shell-maker--output-filter (shell-maker--process)
                                   (propertize "\n<shell-maker-interrupted-command>\n"
+                                              'shell-maker--marker t
                                               'invisible (not shell-maker--show-invisible-markers))))
     (when (process-live-p shell-maker--request-process)
       (kill-process shell-maker--request-process))
@@ -1479,7 +1496,8 @@ Use ON-OUTPUT function to monitor output text."
                       (with-temp-buffer
                         (insert-file-contents path)
                         (shell-maker--extract-history
-                         (shell-maker-prompt-regexp config)))))
+                         ;; prompts from plain text.
+                         :propertized nil))))
          (execute-command (shell-maker-config-execute-command
                            config))
          (validate-command (shell-maker-config-validate-command
@@ -1571,14 +1589,15 @@ Returns nil when there is no history."
         (orig (point)))
     (save-excursion
       (goto-char (point-min))
-      (while (re-search-forward prompt-regexp nil t)
+      (while (shell-maker--re-search-forward-prompt prompt-regexp)
         (let ((prompt-start (match-beginning 0))
               (chunk-end (save-excursion
-                           (if (re-search-forward prompt-regexp nil t)
+                           (if (shell-maker--re-search-forward-prompt
+                                prompt-regexp)
                                (match-beginning 0)
                              (point-max)))))
-          (when (save-excursion
-                  (search-forward "<shell-maker-end-of-prompt>" chunk-end t))
+          (when (shell-maker--find-marker
+                 "<shell-maker-end-of-prompt>" chunk-end)
             (setq total (1+ total))
             (when (<= prompt-start orig)
               (setq current total))))))
@@ -1599,36 +1618,88 @@ Returns nil when there is no history."
    (append (shell-maker-history)
            items)))
 
-(defun shell-maker--extract-history (prompt-regexp)
+(cl-defun shell-maker--extract-history (prompt-regexp &key (propertized t))
   "Extract command/response history by walking the current buffer.
 
 Walks the buffer with `re-search-forward' to find prompt boundaries,
 extracting each exchange as a small substring.
 
+When PROPERTIZED is non-nil (the default), use text property checks
+to distinguish real prompts and markers from identical text in LLM
+responses.  Set to nil for transcript files where properties are
+not available.
+
 Returns a list of (command . response) cons.
 
 In a buffer with:
 
-  Agent> hello
+  Prompt> hello
   <shell-maker-end-of-prompt>Hi there
-  Agent> bye
+  Prompt> bye
   <shell-maker-end-of-prompt>Goodbye
 
-  (shell-maker--extract-history \"^Agent> \")
+  (shell-maker--extract-history \"^Prompt> \")
   ;; => ((\"hello\" . \"Hi there\") (\"bye\" . \"Goodbye\"))"
   (let (result)
     (save-excursion
       (goto-char (point-min))
-      (while (re-search-forward prompt-regexp nil t)
-        (when-let ((parsed (shell-maker--parse-history-chunk
-                            (buffer-substring
-                             (point)
-                             (save-excursion
-                               (if (re-search-forward prompt-regexp nil t)
-                                   (match-beginning 0)
-                                 (point-max)))))))
-          (push parsed result))))
+      (while (if propertized
+                 (shell-maker--re-search-forward-prompt prompt-regexp)
+               (re-search-forward prompt-regexp nil t))
+        (let* ((command-start (point))
+               (next-prompt (save-excursion
+                              (if (if propertized
+                                      ;; Search propertized
+                                      (shell-maker--re-search-forward-prompt
+                                       prompt-regexp)
+                                    ;; Search plainly
+                                    (re-search-forward prompt-regexp nil t))
+                                  (match-beginning 0)
+                                (point-max))))
+               (end-marker (shell-maker--find-marker
+                            "<shell-maker-end-of-prompt>" next-prompt
+                            :propertized propertized))
+               (failed-marker (shell-maker--find-marker
+                               "<shell-maker-failed-command>" next-prompt
+                               :propertized propertized))
+               (interrupted-marker (shell-maker--find-marker
+                                    "<shell-maker-interrupted-command>" next-prompt
+                                    :propertized propertized)))
+          ;; Keep exchange unless failed (interrupted commands are kept).
+          (when-let (((and end-marker
+                           (or (not failed-marker)
+                               interrupted-marker)))
+                     (command (string-trim
+                               (buffer-substring
+                                command-start (car end-marker))))
+                     (response (string-trim
+                                (buffer-substring
+                                 (cdr end-marker) next-prompt)))
+                     ((not (and (string-empty-p command)
+                                (string-empty-p response)))))
+            (push (cons (unless (string-empty-p command)
+                          command)
+                        (unless (string-empty-p response)
+                          response))
+                  result))
+          (goto-char next-prompt))))
     (nreverse result)))
+
+(cl-defun shell-maker--find-marker (marker bound &key (propertized t))
+  "Find MARKER with `shell-maker--marker' property before BOUND.
+
+Returns (start . end) of the marker text, or nil if not found.
+When PROPERTIZED is non-nil (the default), only matches markers
+inserted by shell-maker (identified by the `shell-maker--marker'
+text property), ignoring identical text in LLM responses."
+  (save-excursion
+    (let (found)
+      (while (and (not found)
+                  (search-forward marker bound t))
+        (when (or (not propertized) ;; Short-circuit without prop check.
+                  (get-text-property (match-beginning 0) 'shell-maker--marker))
+          (setq found (cons (match-beginning 0) (point)))))
+      found)))
 
 (defun shell-maker--parse-history-chunk (chunk)
   "Parse a single exchange CHUNK into a (command . response) cons.
@@ -2011,9 +2082,11 @@ Of the form:
     (error "Missing mandatory :input param"))
   (if shell-maker-logging
       (shell-maker--output-filter (shell-maker--process)
-                                  "<shell-maker-end-of-prompt>")
+                                  (propertize "<shell-maker-end-of-prompt>"
+                                              'shell-maker--marker t))
     (shell-maker--output-filter (shell-maker--process)
                                 (propertize "<shell-maker-end-of-prompt>"
+                                            'shell-maker--marker t
                                             'invisible (not shell-maker--show-invisible-markers))))
   (shell-maker--write-partial-reply :config config
                                     :reply "\n")
