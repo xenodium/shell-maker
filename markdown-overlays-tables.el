@@ -442,59 +442,50 @@ Falls back to `string-width' if `string-pixel-width' is unavailable."
         (ceiling (/ (float actual-px) char-px)))
     (string-width str)))
 
-(defun markdown-overlays--compute-table-column-widths (table)
-  "Compute the maximum width of each column in TABLE.
-Returns a list of integers, one per column.
-Widths are based on PROCESSED content (after markdown syntax is removed)."
-  (let ((widths nil))
+(defun markdown-overlays--preprocess-table (table)
+  "Parse and process all cells in TABLE in a single pass.
+Returns a plist with:
+  :natural-widths  - max display width per column
+  :min-widths      - longest word width per column
+  :processed-rows  - list of (row-meta . processed-cells) for each row
+where each processed-cell is the propertized string from `process-cell-content'."
+  (let ((widths nil)
+        (min-widths nil)
+        (processed-rows nil))
     (dolist (row (map-elt table :rows))
-      (unless (map-elt row :separator)
+      (if (map-elt row :separator)
+          (push (cons row nil) processed-rows)
         (let ((cells (markdown-overlays--parse-table-row
                       (map-elt row :start)
                       (map-elt row :end)))
-              (col 0))
+              (col 0)
+              (processed-cells nil))
           (dolist (cell cells)
-            (let ((processed (markdown-overlays--process-cell-content
-                              (map-elt cell :content))))
+            (let* ((processed (markdown-overlays--process-cell-content
+                               (map-elt cell :content)))
+                   (dw (markdown-overlays--table-display-width processed))
+                   (mw (markdown-overlays--table-longest-word processed)))
+              (push processed processed-cells)
               (if (nth col widths)
-                  (setf (nth col widths)
-                        (max (nth col widths)
-                             (markdown-overlays--table-display-width processed)))
-                ;; Extend widths list
-                (setq widths (append widths
-                                     (list (markdown-overlays--table-display-width processed)))))
-              (setq col (1+ col)))))))
-    widths))
-
-(defun markdown-overlays--compute-table-min-column-widths (table)
-  "Compute minimum width for each column in TABLE.
-Minimum is the longest single word in the column (to avoid breaking words).
-Based on PROCESSED content (after markdown syntax is removed)."
-  (let ((min-widths nil))
-    (dolist (row (map-elt table :rows))
-      (unless (map-elt row :separator)
-        (let ((cells (markdown-overlays--parse-table-row
-                      (map-elt row :start)
-                      (map-elt row :end)))
-              (col 0))
-          (dolist (cell cells)
-            (let ((processed (markdown-overlays--process-cell-content
-                              (map-elt cell :content))))
-              (if (nth col min-widths)
-                  (setf (nth col min-widths)
-                        (max (nth col min-widths)
-                             (markdown-overlays--table-longest-word processed)))
-                (setq min-widths (append min-widths
-                                         (list (markdown-overlays--table-longest-word processed)))))
-              (setq col (1+ col)))))))
-    min-widths))
+                  (progn
+                    (setf (nth col widths) (max (nth col widths) dw))
+                    (setf (nth col min-widths) (max (nth col min-widths) mw)))
+                (setq widths (append widths (list dw)))
+                (setq min-widths (append min-widths (list mw))))
+              (setq col (1+ col))))
+          (push (cons row (nreverse processed-cells)) processed-rows))))
+    (list :natural-widths widths
+          :min-widths min-widths
+          :processed-rows (nreverse processed-rows))))
 
 (defun markdown-overlays--table-longest-word (str)
   "Return display width of longest word in STR."
   (if (or (null str) (string-empty-p str))
       0
-    (seq-max (seq-map #'markdown-overlays--table-display-width
-                      (split-string str "[ \t\n]+" t)))))
+    (let ((words (split-string str "[ \t\n]+" t)))
+      (if words
+          (apply #'max (mapcar #'markdown-overlays--table-display-width words))
+        0))))
 
 (defun markdown-overlays--table-total-width (widths)
   "Calculate total rendered width for WIDTHS including borders and padding."
@@ -602,8 +593,10 @@ columns are wrapped to fit within window width.
 Before: | Name | Role |       After: │ Name  │ Role     │
         |------|------|              ├───────┼──────────┤
         | Alice | Engineer |        │ Alice │ Engineer │"
-  (let* ((natural-widths (markdown-overlays--compute-table-column-widths table))
-         (min-widths (markdown-overlays--compute-table-min-column-widths table))
+  (let* ((preprocessed (markdown-overlays--preprocess-table table))
+         (natural-widths (plist-get preprocessed :natural-widths))
+         (min-widths (plist-get preprocessed :min-widths))
+         (processed-rows (plist-get preprocessed :processed-rows))
          (target-width (when markdown-overlays--table-wrap-columns
                          (floor (* (window-body-width)
                                    markdown-overlays--table-max-width-fraction))))
@@ -615,11 +608,12 @@ Before: | Name | Role |       After: │ Name  │ Role     │
                           natural-widths min-widths target-width)
                        natural-widths))
          (separator-row (map-elt table :separator-row))
-         (rows (map-elt table :rows))
          (data-row-num 0))  ; Track data rows for zebra striping
 
-    (dolist (row rows)
-      (let* ((row-start (map-elt row :start))
+    (dolist (row-entry processed-rows)
+      (let* ((row (car row-entry))
+             (processed-cells (cdr row-entry))
+             (row-start (map-elt row :start))
              (row-end (map-elt row :end))
              (row-num (map-elt row :num))
              (is-separator (map-elt row :separator))
@@ -627,8 +621,7 @@ Before: | Name | Role |       After: │ Name  │ Role     │
              (is-zebra (and markdown-overlays--table-zebra-stripe
                             (not is-header)
                             (not is-separator)
-                            (= (mod data-row-num 2) 1)))
-             (cells (markdown-overlays--parse-table-row row-start row-end)))
+                            (= (mod data-row-num 2) 1))))
 
         ;; Increment data row counter for non-header, non-separator rows
         (unless (or is-header is-separator)
@@ -669,17 +662,15 @@ Before: | Name | Role |       After: │ Name  │ Role     │
                                      'invisible 'markdown-overlays-tables
                                      'before-string row-display))
 
-          ;; Content row — unified approach handles both simple and wrapped cases
+          ;; Content row — use pre-processed cell content
           (let* ((wrapped-cells
-                  (seq-map-indexed
-                   (lambda (cell idx)
-                     (let ((width (or (nth idx col-widths) 10))
-                            (processed (markdown-overlays--process-cell-content
-                                        (map-elt cell :content))))
-                       (markdown-overlays--table-wrap-text processed width)))
-                   cells))
+                  (let ((idx 0) result)
+                    (dolist (processed processed-cells (nreverse result))
+                      (let ((width (or (nth idx col-widths) 10)))
+                        (push (markdown-overlays--table-wrap-text processed width) result)
+                        (setq idx (1+ idx))))))
                  (max-lines (max 1 (if wrapped-cells
-                                       (seq-max (seq-map #'length wrapped-cells))
+                                       (apply #'max (mapcar #'length wrapped-cells))
                                      1)))
                  (pipe (if markdown-overlays--table-use-unicode-borders
                            markdown-overlays--table-border-pipe "|"))
@@ -689,6 +680,7 @@ Before: | Name | Role |       After: │ Name  │ Role     │
                                (goto-char row-start)
                                (if (looking-at (rx line-start (* (any " \t"))))
                                    (match-string 0) "")))
+                 (ncols (length processed-cells))
                  ;; Build multi-line display string for entire row
                  (row-display
                   (mapconcat
@@ -696,25 +688,24 @@ Before: | Name | Role |       After: │ Name  │ Role     │
                      (concat
                       leading-ws
                       styled-pipe
-                      (string-join
-                       (seq-map-indexed
-                        (lambda (_cell col-idx)
-                            (let* ((cell-lines (nth col-idx wrapped-cells))
-                                   (width (nth col-idx col-widths))
-                                   (line (or (nth line-idx cell-lines) ""))
-                                   (padded (concat " "
-                                                   (markdown-overlays--pad-string line width)
-                                                   " "))
-                                   (face (cond
-                                          (is-header markdown-overlays--table-header-face)
-                                          (is-zebra markdown-overlays--table-zebra-face)
-                                          (t markdown-overlays--table-row-face))))
-                              ;; Use add-face-text-property to preserve inline formatting
-                              (add-face-text-property 0 (length padded) face t padded)
-                              padded))
-                          cells)
-                         styled-pipe)
-                        styled-pipe))
+                      (let ((col-idx 0) parts)
+                        (while (< col-idx ncols)
+                          (let* ((cell-lines (nth col-idx wrapped-cells))
+                                 (width (nth col-idx col-widths))
+                                 (line (or (nth line-idx cell-lines) ""))
+                                 (padded (concat " "
+                                                 (markdown-overlays--pad-string line width)
+                                                 " "))
+                                 (face (cond
+                                        (is-header markdown-overlays--table-header-face)
+                                        (is-zebra markdown-overlays--table-zebra-face)
+                                        (t markdown-overlays--table-row-face))))
+                            ;; Use add-face-text-property to preserve inline formatting
+                            (add-face-text-property 0 (length padded) face t padded)
+                            (push padded parts))
+                          (setq col-idx (1+ col-idx)))
+                        (string-join (nreverse parts) styled-pipe))
+                      styled-pipe))
                    (number-sequence 0 (1- max-lines))
                    "\n"))
                  ;; Create overlay for entire row (including pipes)
