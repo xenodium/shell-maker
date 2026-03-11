@@ -279,7 +279,7 @@ before the styled text (used for italic's lookbehind character)."
 Handles: links [text](url), bold **text**/__text__, italic *text*/_text_,
 bold-italic ***text***, inline code `text`, and strikethrough ~~text~~."
   ;; Skip all regex processing for plain cells (no markdown syntax).
-  (if (string-match-p (rx (any "*`~[")) content)
+  (if (string-match-p (rx (any "*`~[_")) content)
     (let ((result content))
       ;; Process inline code FIRST so its contents are protected from
       ;; bold/italic processing (e.g., `**text**` should render as code).
