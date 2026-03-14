@@ -216,6 +216,41 @@ Pipes inside backtick code spans are not treated as delimiters."
 
 ;;; Inline Markdown Processing for Table Cells
 
+(defconst markdown-overlays--cell-markup-chars-regexp
+  (rx (any "*`~[_"))
+  "Regexp matching characters that indicate markdown markup in a cell.")
+
+(defconst markdown-overlays--cell-inline-code-regexp
+  (rx "`" (group (+ (not (any "`")))) "`")
+  "Regexp matching inline code in a table cell.")
+
+(defconst markdown-overlays--cell-link-regexp
+  (rx "[" (group (+ (not (any "]")))) "](" (group (+ (not (any ")")))) ")")
+  "Regexp matching markdown links in a table cell.")
+
+(defconst markdown-overlays--cell-bold-italic-regexp
+  (rx "***" (group (+ (not (any "*")))) "***")
+  "Regexp matching bold-italic markup in a table cell.")
+
+(defconst markdown-overlays--cell-bold-regexp
+  (rx (or (seq "**" (group (+? anything)) "**")
+          (seq "__" (group (+ (not (any "_")))) "__")))
+  "Regexp matching bold markup in a table cell.")
+
+(defconst markdown-overlays--cell-italic-regexp
+  (rx (group (or string-start (not (any "\\"))))
+      (or (seq "*" (group (+ (not (any "*")))) "*")
+          (seq "_" (group (+ (not (any "_")))) "_")))
+  "Regexp matching italic markup in a table cell.")
+
+(defconst markdown-overlays--cell-strikethrough-regexp
+  (rx "~~" (group (+? anything)) "~~")
+  "Regexp matching strikethrough markup in a table cell.")
+
+(defconst markdown-overlays--ascii-only-regexp
+  (rx bos (* ascii) eos)
+  "Regexp matching strings containing only ASCII characters.")
+
 (defun markdown-overlays--apply-face-to-unpropertized (str face)
   "Apply FACE to characters in STR lacking a `face' property.
 Characters that already have a `face' property are left untouched."
@@ -279,18 +314,17 @@ before the styled text (used for italic's lookbehind character)."
 Handles: links [text](url), bold **text**/__text__, italic *text*/_text_,
 bold-italic ***text***, inline code `text`, and strikethrough ~~text~~."
   ;; Skip all regex processing for plain cells (no markdown syntax).
-  (if (string-match-p (rx (any "*`~[_")) content)
+  (if (string-match-p markdown-overlays--cell-markup-chars-regexp content)
     (let ((result content))
       ;; Process inline code FIRST so its contents are protected from
       ;; bold/italic processing (e.g., `**text**` should render as code).
       (setq result (markdown-overlays--replace-markup
-                    result (rx "`" (group (+ (not (any "`")))) "`")
+                    result markdown-overlays--cell-inline-code-regexp
                     '(1) 'font-lock-doc-markup-face))
 
       ;; Links need special handling for keymap.
       ;; Skip matches inside already-propertized regions (e.g. inline code).
-      (let ((link-re (rx "[" (group (+ (not (any "]")))) "]("
-                         (group (+ (not (any ")")))) ")"))
+      (let ((link-re markdown-overlays--cell-link-regexp)
             (parts nil)
             (pos 0))
         (while (string-match link-re result pos)
@@ -321,21 +355,18 @@ bold-italic ***text***, inline code `text`, and strikethrough ~~text~~."
 
       ;; Bold-italic, bold
       (setq result (markdown-overlays--replace-markup
-                    result (rx "***" (group (+ (not (any "*")))) "***")
+                    result markdown-overlays--cell-bold-italic-regexp
                     '(1) '(:weight bold :slant italic)))
       (setq result (markdown-overlays--replace-markup
-                    result (rx (or (seq "**" (group (+? anything)) "**")
-                                   (seq "__" (group (+ (not (any "_")))) "__")))
+                    result markdown-overlays--cell-bold-regexp
                     '(1 2) 'bold))
       ;; Italic: nestable inside bold, with lookbehind for escaped \*text\*
       (setq result (markdown-overlays--replace-markup
-                    result (rx (group (or string-start (not (any "\\"))))
-                               (or (seq "*" (group (+ (not (any "*")))) "*")
-                                   (seq "_" (group (+ (not (any "_")))) "_")))
+                    result markdown-overlays--cell-italic-regexp
                     '(2 3) 'italic t 1))
       ;; Strikethrough: nestable inside bold/italic
       (setq result (markdown-overlays--replace-markup
-                    result (rx "~~" (group (+? anything)) "~~")
+                    result markdown-overlays--cell-strikethrough-regexp
                     '(1) '(:strike-through t) t))
 
       ;; Scale tall characters to prevent uneven row heights
@@ -424,7 +455,7 @@ would otherwise cause uneven row heights.  Handles emoji, CJK,
 and any other characters that render taller than the default."
   ;; ASCII characters never render taller than the default line height,
   ;; so skip the per-character scaling loop for ASCII-only strings.
-  (if (string-match-p (rx bos (* ascii) eos) str)
+  (if (string-match-p markdown-overlays--ascii-only-regexp str)
       str
     (let ((result (copy-sequence str))
           (len (length str)))
@@ -457,7 +488,7 @@ Falls back to `string-width' if `string-pixel-width' is unavailable."
   ;; `string-width' matches pixel measurement.  Non-ASCII (emoji, CJK)
   ;; can render wider, requiring expensive `string-pixel-width'.
   (if (and (fboundp 'string-pixel-width)
-           (not (string-match-p (rx bos (* ascii) eos) str)))
+           (not (string-match-p markdown-overlays--ascii-only-regexp str)))
       (let ((char-px (or markdown-overlays--table-char-pixel-width
                          (setq markdown-overlays--table-char-pixel-width
                                (string-pixel-width " "))))
@@ -509,7 +540,7 @@ where each processed-cell is the propertized string from `process-cell-content'.
     ;; so cheap `string-width' matches pixel measurement per word.
     (let ((words (split-string str "[ \t\n]+" t)))
       (if words
-          (apply #'max (mapcar (if (string-match-p (rx bos (* ascii) eos) str)
+          (apply #'max (mapcar (if (string-match-p markdown-overlays--ascii-only-regexp str)
                                    #'string-width
                                  #'markdown-overlays--table-display-width)
                                words))
@@ -588,7 +619,7 @@ that render wider than `string-width' reports (e.g., emoji)."
   ;; column-based padding is pixel-perfect.  Non-ASCII (emoji, CJK)
   ;; can render wider, requiring pixel-based padding with fractional spaces.
   (if (and (fboundp 'string-pixel-width)
-           (not (string-match-p (rx bos (* ascii) eos) str)))
+           (not (string-match-p markdown-overlays--ascii-only-regexp str)))
       (let* ((char-px (or markdown-overlays--table-char-pixel-width
                           (setq markdown-overlays--table-char-pixel-width
                                 (string-pixel-width " "))))

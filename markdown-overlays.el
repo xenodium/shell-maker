@@ -85,6 +85,46 @@ Objective-C -> (\"objective-c\" . \"objc\")"
        (zero-or-more whitespace)
        (group "```") (or "\n" eol)))
 
+(defconst markdown-overlays--link-regexp
+  (rx (seq "["
+           (group (one-or-more (not (any "]"))))
+           "]"
+           "("
+           (group (one-or-more (not (any ")"))))
+           ")"))
+  "Regexp matching markdown links [text](url).")
+
+(defconst markdown-overlays--header-regexp
+  (rx bol (zero-or-more space) (group (one-or-more "#"))
+      (one-or-more space)
+      (group (one-or-more (not (any "\n")))) eol)
+  "Regexp matching markdown headers.")
+
+(defconst markdown-overlays--bold-regexp
+  (rx (or line-start (syntax whitespace))
+      (group
+       (or (seq "**" (group (one-or-more (not (any "\n*")))) "**")
+           (seq "__" (group (one-or-more (not (any "\n_")))) "__")))
+      (or (syntax punctuation) (syntax whitespace) line-end))
+  "Regexp matching markdown bold markup.")
+
+(defconst markdown-overlays--italic-regexp
+  (rx (or (group (or bol (one-or-more (any "\n \t")))
+                 (group "*")
+                 (group (one-or-more (not (any "\n*")))) "*")
+          (group (or bol (one-or-more (any "\n \t")))
+                 (group "_")
+                 (group (one-or-more (not (any "\n_")))) "_")))
+  "Regexp matching markdown italic markup.")
+
+(defconst markdown-overlays--strikethrough-regexp
+  (rx "~~" (group (one-or-more (not (any "\n~")))) "~~")
+  "Regexp matching markdown strikethrough markup.")
+
+(defconst markdown-overlays--inline-code-regexp
+  "`\\([^`\n]+\\)`"
+  "Regexp matching markdown inline code.")
+
 (defun markdown-overlays-remove ()
   "Remove all Markdown overlays."
   (remove-overlays (point-min) (point-max) 'category 'markdown-overlays))
@@ -365,12 +405,7 @@ Use QUOTES1-START QUOTES1-END LANG LANG-START LANG-END BODY-START
     (save-excursion
       (goto-char (point-min))
       (while (re-search-forward
-              (rx (seq "["
-                       (group (one-or-more (not (any "]"))))
-                       "]"
-                       "("
-                       (group (one-or-more (not (any ")"))))
-                       ")"))
+              markdown-overlays--link-regexp
               nil t)
         (if-let ((begin (match-beginning 0))
                  (end (match-end 0))
@@ -405,9 +440,7 @@ Use QUOTES1-START QUOTES1-END LANG LANG-START LANG-END BODY-START
     (save-excursion
       (goto-char (point-min))
       (while (re-search-forward
-              (rx bol (zero-or-more space) (group (one-or-more "#"))
-                  (one-or-more space)
-                  (group (one-or-more (not (any "\n")))) eol)
+              markdown-overlays--header-regexp
               nil t)
         (if-let ((begin (match-beginning 0))
                  (end (match-end 0))
@@ -496,11 +529,7 @@ Use START END TITLE-START TITLE-END URL-START URL-END."
     (save-excursion
       (goto-char (point-min))
       (while (re-search-forward
-              (rx (or line-start (syntax whitespace))
-                  (group
-                   (or (seq "**" (group (one-or-more (not (any "\n*")))) "**")
-                       (seq "__" (group (one-or-more (not (any "\n_")))) "__")))
-                  (or (syntax punctuation) (syntax whitespace) line-end))
+              markdown-overlays--bold-regexp
               nil t)
         (if-let ((begin (match-beginning 1))
                  (end (match-end 1))
@@ -533,12 +562,7 @@ Use START END TITLE-START TITLE-END URL-START URL-END."
     (save-excursion
       (goto-char (point-min))
       (while (re-search-forward
-              (rx (or (group (or bol (one-or-more (any "\n \t")))
-                             (group "*")
-                             (group (one-or-more (not (any "\n*")))) "*")
-                      (group (or bol (one-or-more (any "\n \t")))
-                             (group "_")
-                             (group (one-or-more (not (any "\n_")))) "_")))
+              markdown-overlays--italic-regexp
               nil t)
         (if-let ((begin (match-beginning 0))
                  (end (match-end 0))
@@ -649,7 +673,7 @@ Use START END TEXT-START TEXT-END."
     (save-excursion
       (goto-char (point-min))
       (while (re-search-forward
-              (rx "~~" (group (one-or-more (not (any "\n~")))) "~~")
+              markdown-overlays--strikethrough-regexp
               nil t)
         (if-let ((begin (match-beginning 0))
                  (end (match-end 0))
@@ -699,7 +723,7 @@ Use START END TEXT-START TEXT-END."
     (save-excursion
       (goto-char (point-min))
       (while (re-search-forward
-              "`\\([^`\n]+\\)`"
+              markdown-overlays--inline-code-regexp
               nil t)
         (if-let ((begin (match-beginning 0))
                  (end (match-end 0))
