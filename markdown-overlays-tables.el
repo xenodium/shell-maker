@@ -660,7 +660,7 @@ columns are wrapped to fit within window width.
 Before: | Name | Role |       After: │ Name  │ Role     │
         |------|------|              ├───────┼──────────┤
         | Alice | Engineer |        │ Alice │ Engineer │"
-  (let* ((preprocessed (markdown-overlays--preprocess-table table))
+  (let* ((preprocessed (markdown-overlays--preprocess-table-cached table))
          (natural-widths (plist-get preprocessed :natural-widths))
          (min-widths (plist-get preprocessed :min-widths))
          (processed-rows (plist-get preprocessed :processed-rows))
@@ -794,12 +794,51 @@ Before: | Name | Role |       After: │ Name  │ Role     │
                                    'invisible 'markdown-overlays-tables
                                    'before-string row-display)))))))
 
+(defvar-local markdown-overlays--table-cache nil
+  "Cache of rendered tables as list of (START END NROWS).
+Used to skip re-rendering completed tables that have not changed.")
+
+(defvar-local markdown-overlays--table-preprocess-cache nil
+  "Cache mapping table fingerprints to preprocessed data.
+Each entry is (FINGERPRINT . PREPROCESSED-PLIST).")
+
+(defun markdown-overlays--table-fingerprint (table)
+  "Return a fingerprint (START END NROWS) for TABLE."
+  (list (map-elt table :start)
+        (map-elt table :end)
+        (length (map-elt table :rows))))
+
+(defun markdown-overlays--table-cached-p (table)
+  "Return non-nil if TABLE matches an entry in the render cache."
+  (member (markdown-overlays--table-fingerprint table)
+          markdown-overlays--table-cache))
+
+(defun markdown-overlays--preprocess-table-cached (table)
+  "Return preprocessed data for TABLE, using cache when available.
+Falls back to `markdown-overlays--preprocess-table' on cache miss."
+  (let* ((fp (markdown-overlays--table-fingerprint table))
+         (cached (assoc fp markdown-overlays--table-preprocess-cache)))
+    (if cached
+        (cdr cached)
+      (let ((result (markdown-overlays--preprocess-table table)))
+        (push (cons fp result) markdown-overlays--table-preprocess-cache)
+        result))))
+
 (defun markdown-overlays--fontify-tables (tables)
-  "Align all markdown TABLES using display overlays."
+  "Align all markdown TABLES using display overlays.
+Preprocessed table data is cached by fingerprint so unchanged
+tables skip the expensive cell parsing and width calculation."
   (when (and markdown-overlays-prettify-tables tables)
     (add-to-invisibility-spec 'markdown-overlays-tables)
-    (dolist (table tables)
-      (markdown-overlays--align-table table))))
+    (let ((new-cache nil))
+      (dolist (table tables)
+        (markdown-overlays--align-table table)
+        (push (markdown-overlays--table-fingerprint table) new-cache))
+      ;; Evict stale preprocess cache entries.
+      (setq markdown-overlays--table-preprocess-cache
+            (seq-filter (lambda (entry) (member (car entry) new-cache))
+                        markdown-overlays--table-preprocess-cache))
+      (setq markdown-overlays--table-cache (nreverse new-cache)))))
 
 (provide 'markdown-overlays-tables)
 
