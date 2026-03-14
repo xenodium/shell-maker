@@ -105,6 +105,12 @@ When non-nil, table columns are visually aligned using overlays.")
 (defvar markdown-overlays--table-border-tee-right "┤"
   "Unicode right-edge tee for table borders.")
 
+(defvar-local markdown-overlays--table-cache (make-hash-table :test 'equal)
+  "Hash table mapping table buffer text to cached overlay data.
+Each value is a list of (ROW-START ROW-END BEFORE-STRING LINE-PREFIX)
+entries, one per row, sufficient to re-apply overlays without
+reprocessing.")
+
 (defconst markdown-overlays--table-line-regexp
   (rx line-start
       (* (any " \t"))
@@ -220,12 +226,13 @@ Pipes inside backtick code spans are not treated as delimiters."
   "Apply FACE to characters in STR lacking a `face' property.
 Characters that already have a `face' property are left untouched."
   (let ((result (copy-sequence str))
-        (i 0)
-        (len (length str)))
-    (while (< i len)
-      (unless (get-text-property i 'face result)
-        (put-text-property i (1+ i) 'face face result))
-      (setq i (1+ i)))
+        (len (length str))
+        (pos 0))
+    (while (< pos len)
+      (let ((next (next-single-property-change pos 'face result len)))
+        (unless (get-text-property pos 'face result)
+          (put-text-property pos next 'face face result))
+        (setq pos next)))
     result))
 
 (defun markdown-overlays--replace-markup (str regex groups face
@@ -762,11 +769,48 @@ Before: | Name | Role |       After: │ Name  │ Role     │
                                    'before-string row-display)))))))
 
 (defun markdown-overlays--fontify-tables (tables)
-  "Align all markdown TABLES using display overlays."
-  (when (and markdown-overlays-prettify-tables tables)
-    (add-to-invisibility-spec 'markdown-overlays-tables)
+  "Align all markdown TABLES using display overlays.
+Uses a content-based cache to skip reprocessing unchanged tables."
+  (when-let (((and markdown-overlays-prettify-tables tables))
+             (new-cache (make-hash-table :test 'equal)))
+    (unless (memq 'markdown-overlays-tables
+                  (if (listp buffer-invisibility-spec)
+                      buffer-invisibility-spec))
+      (add-to-invisibility-spec 'markdown-overlays-tables))
     (dolist (table tables)
-      (markdown-overlays--align-table table))))
+      (let ((key (buffer-substring-no-properties (map-elt table :start)
+                                                 (map-elt table :end))))
+        (if-let* ((cached (map-elt markdown-overlays--table-cache key)))
+            ;; Table unchanged, re-apply cached overlays.
+            (progn
+              (dolist (entry cached)
+                (let* ((before-string (map-elt entry :before-string))
+                       (line-prefix (map-elt entry :line-prefix))
+                       (ov (make-overlay (map-elt entry :start) (map-elt entry :end))))
+                  (when line-prefix
+                    (put-text-property 0 (length before-string) 'line-prefix line-prefix before-string))
+                  (markdown-overlays--put
+                   ov
+                   'evaporate t
+                   'invisible 'markdown-overlays-tables
+                   'before-string before-string)))
+              (map-put! new-cache key cached))
+          ;; Table is new or changed, full processing.
+          (markdown-overlays--align-table table)
+          ;; Collect the overlays created for this table region.
+          (let ((entries nil))
+            (dolist (ov (overlays-in (map-elt table :start) (map-elt table :end)))
+              (when (eq (overlay-get ov 'invisible) 'markdown-overlays-tables)
+                (push `((:start . ,(overlay-start ov))
+                        (:end . ,(overlay-end ov))
+                        (:before-string . ,(copy-sequence (overlay-get ov 'before-string)))
+                        (:line-prefix . ,(get-text-property 0 'line-prefix
+                                                            (overlay-get ov 'before-string))))
+                      entries)))
+            (map-put! new-cache key entries)))))
+    ;; Replace old cache — entries for deleted tables are dropped.
+    (setq markdown-overlays--table-cache new-cache)))
+
 
 (provide 'markdown-overlays-tables)
 
