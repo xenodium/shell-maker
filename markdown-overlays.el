@@ -315,35 +315,34 @@ Use QUOTES1-START QUOTES1-END LANG LANG-START LANG-END BODY-START
                                     (markdown-overlays--resolve-internal-language lang)
                                     (downcase (string-trim lang)))
                                    "-mode")))
-        (string (buffer-substring-no-properties body-start body-end))
-        (pos 0)
-        (props)
-        (overlay)
-        (propertized-text))
+        (string (buffer-substring-no-properties body-start body-end)))
     (if (and markdown-overlays-highlight-blocks
              (fboundp lang-mode))
-        (progn
-          (setq propertized-text
-                (with-current-buffer
-                    (get-buffer-create
-                     (format " *markdown-overlays-fontification:%s*" lang-mode))
-                  (let ((inhibit-modification-hooks nil)
-                        (inhibit-message t))
-                    (erase-buffer)
-                    ;; Additional space ensures property change.
-                    (insert string " ")
-                    (funcall lang-mode)
-                    (font-lock-ensure))
-                  (buffer-string)))
-          (while (< pos (length propertized-text))
-            (setq props (text-properties-at pos propertized-text))
-            (setq overlay (make-overlay (+ body-start pos)
-                                        (+ body-start (1+ pos))))
-            (markdown-overlays--put
-             overlay
-             'evaporate t
-             'face (plist-get props 'face))
-            (setq pos (1+ pos))))
+        (let ((propertized
+               (with-current-buffer
+                   (get-buffer-create
+                    (format " *markdown-overlays-fontification:%s*" lang-mode))
+                 (let ((inhibit-modification-hooks nil)
+                       (inhibit-message t))
+                   (erase-buffer)
+                   ;; Additional space ensures property change.
+                   (insert string " ")
+                   (funcall lang-mode)
+                   (font-lock-ensure))
+                 (buffer-string)))
+              (len (- body-end body-start))
+              (pos 0))
+          (setq len (min len (length propertized)))
+          (while (< pos len)
+            (let ((next (next-single-property-change
+                         pos 'face propertized len))
+                  (face (get-text-property pos 'face propertized)))
+              (when face
+                (markdown-overlays--put
+                 (make-overlay (+ body-start pos) (+ body-start next))
+                 'evaporate t
+                 'face face))
+              (setq pos next))))
       (markdown-overlays--put
        (make-overlay body-start body-end)
        'evaporate t
