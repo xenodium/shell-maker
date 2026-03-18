@@ -1953,7 +1953,7 @@ Type %s and press %s to clear all content.
               (shell-maker--actionable-text "major mode"
                                             (lambda ()
                                               (describe-mode)))
-              (shell-maker--align-docs
+              (shell-maker--format-help-rows
                ;; Commands with keybinding listed first.
                (sort rows
                      (lambda (a b)
@@ -1963,7 +1963,7 @@ Type %s and press %s to clear all content.
                          nil)
                         ((string= (nth 0 a) "") nil)
                         ((string= (nth 0 b) "") t)
-                        (t (string> (nth 0 a) (nth 0 b)))))) 3))))))
+                        (t (string> (nth 0 a) (nth 0 b))))))))))))
 
 (defun shell-maker-kill-buffer-query ()
   "Added to `kill-buffer-query-functions' to prevent losing unsaved transcripts."
@@ -1974,6 +1974,36 @@ Type %s and press %s to clear all content.
     (shell-maker-save-session-transcript))
   t)
 
+(defun shell-maker--format-help-rows (rows)
+  "Format help ROWS as stacked entries.
+
+Each row is a list of (KEYS COMMAND-NAME DESCRIPTION).
+
+For example, given:
+
+  ((\"p or <backtab>\" \"agent-shell-previous-item\" \"Go to previous item.\")
+   (\"n or TAB\" \"agent-shell-next-item\" \"Go to next item.\"))
+
+The output is:
+
+  agent-shell-previous-item p or <backtab>
+  Go to previous item.
+
+  agent-shell-next-item n or TAB
+  Go to next item."
+  (mapconcat
+   (lambda (row)
+     (let ((keys (nth 0 row))
+           (name (nth 1 row))
+           (desc (nth 2 row)))
+       (concat
+        name
+        (unless (string-empty-p keys)
+          (concat " " keys))
+        (unless (string-empty-p desc)
+          (concat "\n" desc)))))
+   rows "\n\n"))
+
 (defun shell-maker-echo (text &optional keep-in-history)
   "Echo TEXT to shell.
 
@@ -1982,31 +2012,19 @@ If KEEP-IN-HISTORY, don't mark to ignore it."
   (unless (eq major-mode (shell-maker-major-mode shell-maker--config))
     (user-error "Not in a shell"))
   (with-current-buffer (shell-maker-buffer shell-maker--config)
-    (goto-char (point-max))
-    (shell-maker--output-filter (shell-maker--process)
-                                (concat
-                                 text
-                                 (if keep-in-history
-                                     ""
-                                   (propertize "\n<shell-maker-failed-command>\n"
-                                               'invisible (not shell-maker--show-invisible-markers)))))
-    (comint-send-input) ;; Sets shell-maker--input
-    (shell-maker--output-filter
-     (shell-maker--process)
-     (concat "\n" (shell-maker-prompt shell-maker--config)))))
-
-(defun shell-maker--align-docs (rows space-count)
-  "Align columns in ROWS using SPACE-COUNT."
-  (let ((first-col-width (apply #'max
-                                (mapcar (lambda (x)
-                                          (length (nth 0 x)))
-                                        rows)))
-        (space-str (make-string space-count ?\s)))
-    (mapconcat (lambda (row)
-                 (format (format "%%-%ds%s%%s\n%%-%ds%s%%s"
-                                 first-col-width space-str first-col-width space-str)
-                         (nth 0 row) (nth 1 row) "" (nth 2 row)))
-               rows "\n\n")))
+    (let ((inhibit-read-only t))
+      (goto-char (point-max))
+      (shell-maker--output-filter (shell-maker--process)
+                                  (concat
+                                   text
+                                   (if keep-in-history
+                                       ""
+                                     (propertize "\n<shell-maker-failed-command>\n"
+                                                 'invisible (not shell-maker--show-invisible-markers)))))
+      (comint-send-input) ;; Sets shell-maker--input
+      (shell-maker--output-filter
+       (shell-maker--process)
+       (concat "\n" (shell-maker-prompt shell-maker--config))))))
 
 (defun shell-maker-align-columns (rows)
   "Align columns in ROWS."
