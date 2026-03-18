@@ -119,10 +119,6 @@ or an absolute path like \"/usr/local/bin/curl\"."
 
 (defvar shell-maker--show-invisible-markers nil)
 
-(defconst shell-maker--prompt-rear-nonsticky
-  '(field inhibit-line-move-field-capture read-only font-lock-face)
-  "Text properties set on the prompt and don't want to leak past it.")
-
 (cl-defstruct
     shell-maker-config
   name
@@ -1366,6 +1362,26 @@ Use ON-OUTPUT function to monitor output text."
   (when success
     (shell-maker--write-input-ring-history config)))
 
+(defun shell-maker--clip-output-range (start end)
+  "Clip START/END range so it does not extend into the prompt.
+
+Returns an alist with :start and :end, or nil if the resulting range
+is empty.
+
+For example, with prompt at positions 100-113:
+
+  (shell-maker--clip-output-range 50 200) => ((:start . 50) (:end . 100))
+  (shell-maker--clip-output-range 50 80)  => ((:start . 50) (:end . 80))
+  (shell-maker--clip-output-range 50 50)  => nil"
+  (when-let ((prompt-start (and comint-last-prompt
+                               (marker-position (car comint-last-prompt))))
+             (prompt-end (marker-position (cdr comint-last-prompt)))
+             ((< prompt-start prompt-end)))
+    (setq end (min end prompt-start)))
+  (when (< start end)
+    (list (cons :start start)
+          (cons :end end))))
+
 (defmacro shell-maker-with-auto-scroll-edit (&rest body)
   "Execute BODY, preserving point unless already at end of buffer."
   (save-restriction)
@@ -1390,13 +1406,17 @@ Use ON-OUTPUT function to monitor output text."
            (when (and proc (> point (process-mark proc)))
              (set-marker (process-mark proc) point))
            (setq new-location point))))
-     (unless comint-use-prompt-regexp
+     (when-let (((not comint-use-prompt-regexp))
+                (safe-range (shell-maker--clip-output-range
+                             (marker-position comint-last-output-start)
+                             new-location)))
        (with-silent-modifications
-         (add-text-properties comint-last-output-start new-location
-                              `(rear-nonsticky
-                                ,shell-maker--prompt-rear-nonsticky
+         (add-text-properties (map-elt safe-range :start) (map-elt safe-range :end)
+                              `(read-only t
+                                rear-nonsticky
+                                (field inhibit-line-move-field-capture font-lock-face)
                                 front-sticky
-                                (field inhibit-line-move-field-capture)
+                                (read-only field inhibit-line-move-field-capture)
                                 field output
                                 inhibit-line-move-field-capture t))))))
 
@@ -1745,13 +1765,17 @@ Uses PROCESS and STRING same as `comint-output-filter'."
           (insert string)
           (set-marker (process-mark process) (point))
           (goto-char (process-mark process))
-          (unless comint-use-prompt-regexp
+          (when-let (((not comint-use-prompt-regexp))
+                     (safe-range (shell-maker--clip-output-range
+                                  (marker-position comint-last-output-start)
+                                  (point))))
             (with-silent-modifications
-              (add-text-properties comint-last-output-start (point)
-                                   `(rear-nonsticky
-                                     ,shell-maker--prompt-rear-nonsticky
+              (add-text-properties (map-elt safe-range :start) (map-elt safe-range :end)
+                                   `(read-only t
+                                     rear-nonsticky
+                                     (field inhibit-line-move-field-capture font-lock-face)
                                      front-sticky
-                                     (field inhibit-line-move-field-capture)
+                                     (read-only field inhibit-line-move-field-capture)
                                      field output
                                      inhibit-line-move-field-capture t))))
           (when-let* ((prompt-start (save-excursion (forward-line 0) (point)))
@@ -1779,7 +1803,7 @@ Uses PROCESS and STRING same as `comint-output-filter'."
                                             'comint-highlight-prompt)
             (add-text-properties prompt-start (point)
                                  `(rear-nonsticky
-                                   ,shell-maker--prompt-rear-nonsticky))))))))
+                                   (field inhibit-line-move-field-capture read-only font-lock-face)))))))))
 
 (defun shell-maker-buffer (config)
   "Get buffer from CONFIG."
