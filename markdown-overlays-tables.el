@@ -39,17 +39,23 @@
 ;;         │ Alice     │ Engineer │  (with bold and clickable link)
 ;;
 ;; Note on implementation strategy:
-;; Tables use `invisible' + `before-string' overlays to replace entire
-;; rows with formatted strings.  This differs from other markdown elements
-;; in markdown-overlays.el which use buffer overlays to hide markup while
-;; styling text in-place.
+;; Tables hide each row with a `display ""' overlay property and render
+;; the formatted row via a `before-string'.  This differs from other
+;; markdown elements in markdown-overlays.el which use buffer overlays
+;; to hide markup while styling text in-place.
 ;;
-;; We chose the invisible + before-string approach because:
+;; We chose this shape because:
 ;; - Tables require precise column alignment and width control
 ;; - Cell content may wrap to multiple lines
 ;; - Unicode box-drawing characters replace ASCII pipes/dashes
 ;; - Text properties (e.g. fractional-width spaces) are honoured
 ;; - A single overlay per row is simpler than multiple hide/show overlays
+;;
+;; We use `display ""' rather than `invisible' to hide the source row.
+;; The combination `invisible' + multi-line `before-string' trips an
+;; Emacs display-engine bug where `vertical-motion' (and so
+;; `previous-line') strands point at the row when scrolling up.
+;; See https://debbugs.gnu.org/cgi/bugreport.cgi?bug=80989
 ;;
 ;; Trade-offs:
 ;; - Search won't find markdown syntax hidden in table cells
@@ -713,14 +719,15 @@ Before: | Name | Role |       After: │ Name  │ Role     │
                       (propertize pipe 'face markdown-overlays--table-border-face))
                      (propertize pipe-right 'face markdown-overlays--table-border-face)))
                    (ov (make-overlay row-start row-end)))
-              ;; Use invisible+before-string so text properties in
+              ;; Use display=""+before-string so text properties in
               ;; row-display (e.g. fractional-width spaces) are honoured.
               (let ((lp (get-text-property row-start 'line-prefix)))
                 (when lp
                   (put-text-property 0 (length row-display) 'line-prefix lp row-display)))
               (markdown-overlays--put ov
                                      'evaporate t
-                                     'invisible 'markdown-overlays-tables
+                                     'markdown-overlays-tables t
+                                     'display ""
                                      'before-string row-display))
 
           ;; Content row — use pre-processed cell content
@@ -776,7 +783,7 @@ Before: | Name | Role |       After: │ Name  │ Role     │
                     (mapconcat #'identity (nreverse lines) "\n")))
                  ;; Create overlay for entire row (including pipes)
                  (ov (make-overlay row-start row-end)))
-            ;; Use invisible+before-string so text properties in
+            ;; Use display=""+before-string so text properties in
             ;; row-display (e.g. fractional-width spaces) are honoured.
             ;; Propagate line-prefix so wrapped lines indent correctly
             ;; even for the last row where buffer properties may differ.
@@ -785,7 +792,8 @@ Before: | Name | Role |       After: │ Name  │ Role     │
                 (put-text-property 0 (length row-display) 'line-prefix lp row-display)))
             (markdown-overlays--put ov
                                    'evaporate t
-                                   'invisible 'markdown-overlays-tables
+                                   'markdown-overlays-tables t
+                                   'display ""
                                    'before-string row-display)))))))
 
 (defun markdown-overlays--fontify-tables (tables)
@@ -793,10 +801,6 @@ Before: | Name | Role |       After: │ Name  │ Role     │
 Uses a content-based cache to skip reprocessing unchanged tables."
   (when-let (((and markdown-overlays-prettify-tables tables))
              (new-cache (make-hash-table :test 'equal)))
-    (unless (memq 'markdown-overlays-tables
-                  (if (listp buffer-invisibility-spec)
-                      buffer-invisibility-spec))
-      (add-to-invisibility-spec 'markdown-overlays-tables))
     (dolist (table tables)
       (let ((key (buffer-substring-no-properties (map-elt table :start)
                                                  (map-elt table :end))))
@@ -812,7 +816,8 @@ Uses a content-based cache to skip reprocessing unchanged tables."
                   (markdown-overlays--put
                    ov
                    'evaporate t
-                   'invisible 'markdown-overlays-tables
+                   'markdown-overlays-tables t
+                   'display ""
                    'before-string before-string)))
               (map-put! new-cache key cached))
           ;; Table is new or changed, full processing.
@@ -820,7 +825,7 @@ Uses a content-based cache to skip reprocessing unchanged tables."
           ;; Collect the overlays created for this table region.
           (let ((entries nil))
             (dolist (ov (overlays-in (map-elt table :start) (map-elt table :end)))
-              (when (eq (overlay-get ov 'invisible) 'markdown-overlays-tables)
+              (when (overlay-get ov 'markdown-overlays-tables)
                 (push `((:start . ,(overlay-start ov))
                         (:end . ,(overlay-end ov))
                         (:before-string . ,(copy-sequence (overlay-get ov 'before-string)))
