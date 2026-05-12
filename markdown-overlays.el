@@ -289,6 +289,7 @@ Use QUOTES1-START QUOTES1-END LANG LANG-START LANG-END BODY-START
   (markdown-overlays--put
    (make-overlay quotes1-start quotes1-end)
    'evaporate t
+   'markdown-overlays-markup-type 'fence
    'display
    (propertize "📋 "
                'pointer 'hand
@@ -301,15 +302,18 @@ Use QUOTES1-START QUOTES1-END LANG LANG-START LANG-END BODY-START
   (markdown-overlays--put
    (make-overlay quotes2-start quotes2-end)
    'evaporate t
+   'markdown-overlays-markup-type 'fence
    'invisible 't)
   (unless (eq lang-start lang-end)
     (markdown-overlays--put
      (make-overlay lang-start lang-end)
      'evaporate t
+     'markdown-overlays-markup-type 'language
      'face '(:box t))
     (markdown-overlays--put
      (make-overlay lang-end (1+ lang-end))
      'evaporate t
+     'markdown-overlays-markup-type 'language
      'display "\n\n"))
   (let ((lang-mode (intern (concat (or
                                     (markdown-overlays--resolve-internal-language lang)
@@ -353,6 +357,7 @@ Use QUOTES1-START QUOTES1-END LANG LANG-START LANG-END BODY-START
   (markdown-overlays--put
    (make-overlay start end)
    'evaporate t
+   'markdown-overlays-markup-type 'divider
    'display
    (concat (propertize (concat (make-string (window-body-width) ? ) "")
                        'face '(:underline t)) "\n")))
@@ -460,6 +465,7 @@ Use START END TITLE-START TITLE-END URL-START URL-END."
   (markdown-overlays--put
    (make-overlay start title-start)
    'evaporate t
+   'markdown-overlays-markup-type 'link
    'invisible 't)
   ;; Show title as link
   (markdown-overlays--put
@@ -486,6 +492,7 @@ Use START END TITLE-START TITLE-END URL-START URL-END."
   (markdown-overlays--put
    (make-overlay title-end end)
    'evaporate t
+   'markdown-overlays-markup-type 'link
    'invisible 't))
 
 (defun markdown-overlays--markdown-bolds (&optional avoid-ranges)
@@ -573,6 +580,7 @@ NEEDS-TRAILING-NEWLINE."
   (markdown-overlays--put
    (make-overlay level-start title-start)
    'evaporate t
+   'markdown-overlays-markup-type 'header
    'invisible 't)
   ;; Show title as header
   (markdown-overlays--put
@@ -601,6 +609,7 @@ NEEDS-TRAILING-NEWLINE."
     (markdown-overlays--put
      (make-overlay (1+ end) (1+ end))
      'evaporate t
+     'markdown-overlays-markup-type 'header
      'before-string "\n")))
 
 (defun markdown-overlays--fontify-bold (start end text-start text-end)
@@ -610,6 +619,7 @@ Use START END TEXT-START TEXT-END."
   (markdown-overlays--put
    (make-overlay start text-start)
    'evaporate t
+   'markdown-overlays-markup-type 'bold
    'invisible 't)
   ;; Show title as bold
   (markdown-overlays--put
@@ -620,6 +630,7 @@ Use START END TEXT-START TEXT-END."
   (markdown-overlays--put
    (make-overlay text-end end)
    'evaporate t
+   'markdown-overlays-markup-type 'bold
    'invisible 't))
 
 (defun markdown-overlays--fontify-italic (start end text-start text-end)
@@ -629,6 +640,7 @@ Use START END TEXT-START TEXT-END."
   (markdown-overlays--put
    (make-overlay start text-start)
    'evaporate t
+   'markdown-overlays-markup-type 'italic
    'invisible 't)
   ;; Show title as italic
   (markdown-overlays--put
@@ -639,6 +651,7 @@ Use START END TEXT-START TEXT-END."
   (markdown-overlays--put
    (make-overlay text-end end)
    'evaporate t
+   'markdown-overlays-markup-type 'italic
    'invisible 't))
 
 (defun markdown-overlays--markdown-strikethroughs (&optional avoid-ranges)
@@ -679,6 +692,7 @@ Use START END TEXT-START TEXT-END."
   (markdown-overlays--put
    (make-overlay start text-start)
    'evaporate t
+   'markdown-overlays-markup-type 'strikethrough
    'invisible 't)
   ;; Show title as strikethrough
   (markdown-overlays--put
@@ -689,6 +703,7 @@ Use START END TEXT-START TEXT-END."
   (markdown-overlays--put
    (make-overlay text-end end)
    'evaporate t
+   'markdown-overlays-markup-type 'strikethrough
    'invisible 't))
 
 (defun markdown-overlays--markdown-inline-codes (&optional avoid-ranges)
@@ -730,11 +745,13 @@ Use QUOTES1-START QUOTES1-END LANG LANG-START LANG-END BODY-START
    (make-overlay (1- body-start)
                  body-start)
    'evaporate t
+   'markdown-overlays-markup-type 'inline-code
    'invisible 't)
   (markdown-overlays--put
    (make-overlay body-end
                  (1+ body-end))
    'evaporate t
+   'markdown-overlays-markup-type 'inline-code
    'invisible 't)
   (markdown-overlays--put
    (make-overlay body-start body-end)
@@ -1014,6 +1031,7 @@ URL-START and URL-END delimit the image URL."
     (markdown-overlays--put
      (make-overlay start end)
      'evaporate t
+     'markdown-overlays-markup-type 'image
      'display image
      'keymap (markdown-overlays--make-ret-binding-map
               (lambda ()
@@ -1032,6 +1050,7 @@ PATH-START and PATH-END delimit the path text."
     (markdown-overlays--put
      (make-overlay start end)
      'evaporate t
+     'markdown-overlays-markup-type 'image
      'display image
      'keymap (markdown-overlays--make-ret-binding-map
               (lambda ()
