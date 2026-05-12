@@ -39,17 +39,23 @@
 ;;         │ Alice     │ Engineer │  (with bold and clickable link)
 ;;
 ;; Note on implementation strategy:
-;; Tables use `invisible' + `before-string' overlays to replace entire
-;; rows with formatted strings.  This differs from other markdown elements
-;; in markdown-overlays.el which use buffer overlays to hide markup while
-;; styling text in-place.
+;; Tables hide each row with a `display ""' overlay property and render
+;; the formatted row via a `before-string'.  This differs from other
+;; markdown elements in markdown-overlays.el which use buffer overlays
+;; to hide markup while styling text in-place.
 ;;
-;; We chose the invisible + before-string approach because:
+;; We chose this shape because:
 ;; - Tables require precise column alignment and width control
 ;; - Cell content may wrap to multiple lines
 ;; - Unicode box-drawing characters replace ASCII pipes/dashes
 ;; - Text properties (e.g. fractional-width spaces) are honoured
 ;; - A single overlay per row is simpler than multiple hide/show overlays
+;;
+;; We use `display ""' rather than `invisible' to hide the source row.
+;; The combination `invisible' + multi-line `before-string' trips an
+;; Emacs display-engine bug where `vertical-motion' (and so
+;; `previous-line') strands point at the row when scrolling up.
+;; See https://debbugs.gnu.org/cgi/bugreport.cgi?bug=80989
 ;;
 ;; Trade-offs:
 ;; - Search won't find markdown syntax hidden in table cells
@@ -451,25 +457,51 @@ and any other characters that render taller than the default."
 
 ;;; Column Width Computation
 
-(defvar markdown-overlays--table-char-pixel-width nil
-  "Cached pixel width of a single space character.")
+(defvar-local markdown-overlays--table-char-pixel-width-cache nil
+  "Cons cell (FONT-WIDTH . SPACE-WIDTH) caching real pixel width of a space.")
+
+(defun markdown-overlays--table-measure-string (str window)
+  "Return real pixel width of STR if rendered at point-max of WINDOW's buffer.
+Briefly inserts STR, measures with `window-text-pixel-size', and
+deletes.  Modification hooks and the modified flag are suppressed."
+  (with-current-buffer (window-buffer window)
+    (let ((inhibit-read-only t)
+          (inhibit-modification-hooks t)
+          (modified (buffer-modified-p))
+          real)
+      (save-excursion
+        (goto-char (point-max))
+        (let ((m (point-marker)))
+          (set-marker-insertion-type m nil)
+          (insert str)
+          (setq real (car (window-text-pixel-size window m (point))))
+          (delete-region m (point))
+          (set-marker m nil)))
+      (set-buffer-modified-p modified)
+      real)))
+
+(defun markdown-overlays--table-char-pixel-width (window)
+  "Return real pixel width of a single space in WINDOW, cached.
+Invalidates the cache if the default font width changes (e.g. text scaling)."
+  (let ((fw (window-font-width window)))
+    (if (and markdown-overlays--table-char-pixel-width-cache
+             (= fw (car markdown-overlays--table-char-pixel-width-cache)))
+        (cdr markdown-overlays--table-char-pixel-width-cache)
+      (let ((sw (markdown-overlays--table-measure-string " " window)))
+        (setq markdown-overlays--table-char-pixel-width-cache (cons fw sw))
+        sw))))
 
 (defun markdown-overlays--table-display-width (str)
   "Return display width of STR in character units.
-Uses pixel measurements to detect characters that render wider than
-`string-width' reports (e.g., emoji).  `string-pixel-width' respects
-display properties like (height N) set by height scaling.
-Falls back to `string-width' if `string-pixel-width' is unavailable."
-  ;; ASCII characters render at exactly 1 × space-pixel-width, so
-  ;; `string-width' matches pixel measurement.  Non-ASCII (emoji, CJK)
-  ;; can render wider, requiring expensive `string-pixel-width'.
-  (if (and (fboundp 'string-pixel-width)
+Uses `window-text-pixel-size' for non-ASCII strings to ensure accurate
+measurements of emoji, CJK, and flags in the destination buffer."
+  (if (and (fboundp 'window-text-pixel-size)
            (not (string-match-p (rx bos (* ascii) eos) str)))
-      (let ((char-px (or markdown-overlays--table-char-pixel-width
-                         (setq markdown-overlays--table-char-pixel-width
-                               (string-pixel-width " "))))
-            (actual-px (string-pixel-width str)))
-        (ceiling (/ (float actual-px) char-px)))
+      (let* ((win (or (get-buffer-window (current-buffer))
+                      (selected-window)))
+             (char-px (markdown-overlays--table-char-pixel-width win))
+             (real-px (markdown-overlays--table-measure-string str win)))
+        (ceiling (/ (float real-px) char-px)))
     (string-width str)))
 
 (defun markdown-overlays--preprocess-table (table)
@@ -512,8 +544,6 @@ where each processed-cell is the propertized string from `process-cell-content'.
   "Return display width of longest word in STR."
   (if (or (null str) (string-empty-p str))
       0
-    ;; ASCII renders at exactly 1 × space-pixel-width per char,
-    ;; so cheap `string-width' matches pixel measurement per word.
     (let ((words (split-string str "[ \t\n]+" t)))
       (if words
           (apply #'max (mapcar (if (string-match-p (rx bos (* ascii) eos) str)
@@ -588,30 +618,26 @@ Preserves text properties across wrapped lines."
         (nreverse lines)))))
 
 (defun markdown-overlays--pad-string (str width)
-  "Pad STR with spaces to reach WIDTH.
-Uses pixel measurements when available to compensate for characters
-that render wider than `string-width' reports (e.g., emoji)."
-  ;; ASCII characters render at exactly 1 × space-pixel-width, so
-  ;; column-based padding is pixel-perfect.  Non-ASCII (emoji, CJK)
-  ;; can render wider, requiring pixel-based padding with fractional spaces.
-  (if (and (fboundp 'string-pixel-width)
+  "Pad STR with spaces to reach WIDTH columns.
+Non-ASCII content uses space characters for full columns and a fractional
+pixel-width space for exact sub-pixel alignment."
+  (if (and (fboundp 'window-text-pixel-size)
            (not (string-match-p (rx bos (* ascii) eos) str)))
-      (let* ((char-px (or markdown-overlays--table-char-pixel-width
-                          (setq markdown-overlays--table-char-pixel-width
-                                (string-pixel-width " "))))
+      (let* ((win (or (get-buffer-window (current-buffer))
+                      (selected-window)))
+             (char-px (markdown-overlays--table-char-pixel-width win))
              (target-px (* width char-px))
-             (actual-px (string-pixel-width str))
-             (pad-px (- target-px actual-px)))
+             (content-px (markdown-overlays--table-measure-string str win))
+             (pad-px (- target-px content-px)))
         (if (<= pad-px 0)
             str
           (let* ((full-spaces (floor (/ (float pad-px) char-px)))
-                 (remaining (/ (- (float pad-px) (* full-spaces char-px)) char-px)))
+                 (remaining-px (- pad-px (* full-spaces char-px))))
             (concat str
                     (make-string full-spaces ?\s)
-                    (if (> remaining 0.01)
-                        (propertize " " 'display `(space :width ,remaining))
+                    (if (> remaining-px 0)
+                        (propertize " " 'display `(space :width (,remaining-px)))
                       "")))))
-    ;; ASCII-only or older Emacs — string-width is accurate.
     (let ((current-width (string-width str)))
       (if (>= current-width width)
           str
@@ -693,14 +719,15 @@ Before: | Name | Role |       After: │ Name  │ Role     │
                       (propertize pipe 'face markdown-overlays--table-border-face))
                      (propertize pipe-right 'face markdown-overlays--table-border-face)))
                    (ov (make-overlay row-start row-end)))
-              ;; Use invisible+before-string so text properties in
+              ;; Use display=""+before-string so text properties in
               ;; row-display (e.g. fractional-width spaces) are honoured.
               (let ((lp (get-text-property row-start 'line-prefix)))
                 (when lp
                   (put-text-property 0 (length row-display) 'line-prefix lp row-display)))
               (markdown-overlays--put ov
                                      'evaporate t
-                                     'invisible 'markdown-overlays-tables
+                                     'markdown-overlays-tables t
+                                     'display ""
                                      'before-string row-display))
 
           ;; Content row — use pre-processed cell content
@@ -756,7 +783,7 @@ Before: | Name | Role |       After: │ Name  │ Role     │
                     (mapconcat #'identity (nreverse lines) "\n")))
                  ;; Create overlay for entire row (including pipes)
                  (ov (make-overlay row-start row-end)))
-            ;; Use invisible+before-string so text properties in
+            ;; Use display=""+before-string so text properties in
             ;; row-display (e.g. fractional-width spaces) are honoured.
             ;; Propagate line-prefix so wrapped lines indent correctly
             ;; even for the last row where buffer properties may differ.
@@ -765,7 +792,8 @@ Before: | Name | Role |       After: │ Name  │ Role     │
                 (put-text-property 0 (length row-display) 'line-prefix lp row-display)))
             (markdown-overlays--put ov
                                    'evaporate t
-                                   'invisible 'markdown-overlays-tables
+                                   'markdown-overlays-tables t
+                                   'display ""
                                    'before-string row-display)))))))
 
 (defun markdown-overlays--fontify-tables (tables)
@@ -773,10 +801,6 @@ Before: | Name | Role |       After: │ Name  │ Role     │
 Uses a content-based cache to skip reprocessing unchanged tables."
   (when-let (((and markdown-overlays-prettify-tables tables))
              (new-cache (make-hash-table :test 'equal)))
-    (unless (memq 'markdown-overlays-tables
-                  (if (listp buffer-invisibility-spec)
-                      buffer-invisibility-spec))
-      (add-to-invisibility-spec 'markdown-overlays-tables))
     (dolist (table tables)
       (let ((key (buffer-substring-no-properties (map-elt table :start)
                                                  (map-elt table :end))))
@@ -792,7 +816,8 @@ Uses a content-based cache to skip reprocessing unchanged tables."
                   (markdown-overlays--put
                    ov
                    'evaporate t
-                   'invisible 'markdown-overlays-tables
+                   'markdown-overlays-tables t
+                   'display ""
                    'before-string before-string)))
               (map-put! new-cache key cached))
           ;; Table is new or changed, full processing.
@@ -800,7 +825,7 @@ Uses a content-based cache to skip reprocessing unchanged tables."
           ;; Collect the overlays created for this table region.
           (let ((entries nil))
             (dolist (ov (overlays-in (map-elt table :start) (map-elt table :end)))
-              (when (eq (overlay-get ov 'invisible) 'markdown-overlays-tables)
+              (when (overlay-get ov 'markdown-overlays-tables)
                 (push `((:start . ,(overlay-start ov))
                         (:end . ,(overlay-end ov))
                         (:before-string . ,(copy-sequence (overlay-get ov 'before-string)))
