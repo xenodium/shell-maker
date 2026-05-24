@@ -279,6 +279,75 @@
       (should (memq 'bold (ensure-list face)))
       (should (member '(:strike-through t) (ensure-list face))))))
 
+;;; Grapheme width and modern TTY detection
+
+(ert-deftest markdown-overlays-tables-test-grapheme-width-ascii ()
+  "ASCII characters are one cell."
+  (should (= (markdown-overlays--grapheme-width "a") 1)))
+
+(ert-deftest markdown-overlays-tables-test-grapheme-width-zwj ()
+  "ZWJ-joined sequences are forced to two cells."
+  (should (= (markdown-overlays--grapheme-width "\N{WOMAN}\N{ZERO WIDTH JOINER}\N{ROCKET}") 2)))
+
+(ert-deftest markdown-overlays-tables-test-grapheme-width-vs16 ()
+  "Sequences containing VS-16 (emoji presentation) are forced to two cells."
+  (should (= (markdown-overlays--grapheme-width "\N{HEAVY BLACK HEART}\N{VARIATION SELECTOR-16}") 2)))
+
+(ert-deftest markdown-overlays-tables-test-grapheme-width-skin-tone ()
+  "Skin-tone modifiers are forced to two cells."
+  (should (= (markdown-overlays--grapheme-width "\N{THUMBS UP SIGN}\N{EMOJI MODIFIER FITZPATRICK TYPE-4}") 2)))
+
+(ert-deftest markdown-overlays-tables-test-grapheme-width-capped-at-two ()
+  "Wide characters without modifiers are still capped at two cells."
+  (should (= (markdown-overlays--grapheme-width "\N{GRINNING FACE}") 2)))
+
+(defmacro markdown-overlays-tables-tests--with-term-program (value &rest body)
+  "Run BODY with TERM_PROGRAM set to VALUE and the modern-tty frame cache cleared."
+  (declare (indent 1))
+  `(let ((process-environment (cons (concat "TERM_PROGRAM=" (or ,value ""))
+                                    process-environment))
+         (frame (selected-frame)))
+     (unwind-protect
+         (progn
+           (set-frame-parameter frame 'markdown-overlays-modern-tty nil)
+           ,@body)
+       (set-frame-parameter frame 'markdown-overlays-modern-tty nil))))
+
+(ert-deftest markdown-overlays-tables-test-modern-tty-allowlist ()
+  "Known modern terminals are detected, with case-insensitive matching."
+  (dolist (term '("ghostty" "WezTerm" "kitty" "iTerm.app"))
+    (markdown-overlays-tables-tests--with-term-program term
+      (should (markdown-overlays--modern-tty-p)))))
+
+(ert-deftest markdown-overlays-tables-test-modern-tty-denies-apple-terminal ()
+  "macOS Terminal is not classified as modern."
+  (markdown-overlays-tables-tests--with-term-program "Apple_Terminal"
+    (should-not (markdown-overlays--modern-tty-p))))
+
+(ert-deftest markdown-overlays-tables-test-modern-tty-denies-unset ()
+  "Missing TERM_PROGRAM is not classified as modern."
+  (let ((process-environment (seq-remove (lambda (e) (string-prefix-p "TERM_PROGRAM=" e))
+                                         process-environment))
+        (frame (selected-frame)))
+    (unwind-protect
+        (progn
+          (set-frame-parameter frame 'markdown-overlays-modern-tty nil)
+          (should-not (markdown-overlays--modern-tty-p)))
+      (set-frame-parameter frame 'markdown-overlays-modern-tty nil))))
+
+(ert-deftest markdown-overlays-tables-test-modern-tty-frame-override ()
+  "Frame parameter override wins over environment."
+  (let ((frame (selected-frame)))
+    (unwind-protect
+        (progn
+          (let ((process-environment (cons "TERM_PROGRAM=Apple_Terminal" process-environment)))
+            (set-frame-parameter frame 'markdown-overlays-modern-tty 'yes)
+            (should (markdown-overlays--modern-tty-p)))
+          (let ((process-environment (cons "TERM_PROGRAM=ghostty" process-environment)))
+            (set-frame-parameter frame 'markdown-overlays-modern-tty 'no)
+            (should-not (markdown-overlays--modern-tty-p))))
+      (set-frame-parameter frame 'markdown-overlays-modern-tty nil))))
+
 (provide 'markdown-overlays-tables-tests)
 
 ;;; markdown-overlays-tables-tests.el ends here
