@@ -460,6 +460,22 @@ and any other characters that render taller than the default."
 (defvar-local markdown-overlays--table-char-pixel-width-cache nil
   "Cons cell (FONT-WIDTH . SPACE-WIDTH) caching real pixel width of a space.")
 
+(defun markdown-overlays--modern-tty-p (&optional frame)
+  "Return non-nil if FRAME is a modern TTY (Ghostty, WezTerm, Kitty).
+These terminals shape ZWJ sequences into single cells, whereas Emacs
+defaults assume standard legacy behavior (e.g. macOS Terminal)."
+  (let* ((f (or frame (selected-frame)))
+         (val (frame-parameter f 'markdown-overlays-modern-tty)))
+    (if (memq val '(yes no))
+        (eq val 'yes)
+      (let* ((term-prog (or (getenv "TERM_PROGRAM" f)
+                            (getenv "TERM_PROGRAM")))
+             (is-modern (and term-prog
+                             (member (downcase term-prog)
+                                     '("ghostty" "wezterm" "kitty" "iterm.app")))))
+        (set-frame-parameter f 'markdown-overlays-modern-tty (if is-modern 'yes 'no))
+        is-modern))))
+
 (defun markdown-overlays--table-measure-string (str window)
   "Return real pixel width of STR if rendered at point-max of WINDOW's buffer.
 Briefly inserts STR, measures with `window-text-pixel-size', and
@@ -491,18 +507,37 @@ Invalidates the cache if the default font width changes (e.g. text scaling)."
         (setq markdown-overlays--table-char-pixel-width-cache (cons fw sw))
         sw))))
 
+(defun markdown-overlays--grapheme-width (g)
+  "Calculate width of a single grapheme cluster G in a modern terminal."
+  (if (string-match-p (rx (or "\xfe0f" "\x200d" (any "\x1f3fb-\x1f3ff"))) g)
+      2
+    (min (string-width g) 2)))
+
+(defun markdown-overlays--string-width (str)
+  "Calculate string width, adjusting for complex emojis in TTY mode.
+Modern terminals render ZWJ sequences and skin tone modifiers as a
+single 2-cell glyph, but Emacs `string-width' sums their parts."
+  (cond
+   ((display-graphic-p)
+    (string-width str))
+   ((and (markdown-overlays--modern-tty-p) (fboundp 'string-glyph-split))
+    (seq-reduce #'+ (seq-map #'markdown-overlays--grapheme-width (string-glyph-split str)) 0))
+   (t
+    (string-width str))))
+
 (defun markdown-overlays--table-display-width (str)
   "Return display width of STR in character units.
 Uses `window-text-pixel-size' for non-ASCII strings to ensure accurate
 measurements of emoji, CJK, and flags in the destination buffer."
-  (if (and (fboundp 'window-text-pixel-size)
+  (if (and (display-graphic-p)
+           (fboundp 'window-text-pixel-size)
            (not (string-match-p (rx bos (* ascii) eos) str)))
       (let* ((win (or (get-buffer-window (current-buffer))
                       (selected-window)))
              (char-px (markdown-overlays--table-char-pixel-width win))
              (real-px (markdown-overlays--table-measure-string str win)))
         (ceiling (/ (float real-px) char-px)))
-    (string-width str)))
+    (markdown-overlays--string-width str)))
 
 (defun markdown-overlays--preprocess-table (table)
   "Parse and process all cells in TABLE in a single pass.
@@ -547,7 +582,7 @@ where each processed-cell is the propertized string from `process-cell-content'.
     (let ((words (split-string str "[ \t\n]+" t)))
       (if words
           (apply #'max (mapcar (if (string-match-p (rx bos (* ascii) eos) str)
-                                   #'string-width
+                                   #'markdown-overlays--string-width
                                  #'markdown-overlays--table-display-width)
                                words))
         0))))
@@ -621,7 +656,8 @@ Preserves text properties across wrapped lines."
   "Pad STR with spaces to reach WIDTH columns.
 Non-ASCII content uses space characters for full columns and a fractional
 pixel-width space for exact sub-pixel alignment."
-  (if (and (fboundp 'window-text-pixel-size)
+  (if (and (display-graphic-p)
+           (fboundp 'window-text-pixel-size)
            (not (string-match-p (rx bos (* ascii) eos) str)))
       (let* ((win (or (get-buffer-window (current-buffer))
                       (selected-window)))
@@ -638,7 +674,7 @@ pixel-width space for exact sub-pixel alignment."
                     (if (> remaining-px 0)
                         (propertize " " 'display `(space :width (,remaining-px)))
                       "")))))
-    (let ((current-width (string-width str)))
+    (let ((current-width (markdown-overlays--string-width str)))
       (if (>= current-width width)
           str
         (concat str (make-string (- width current-width) ?\s))))))
