@@ -1246,11 +1246,11 @@ ERROR-CALLBACK accordingly."
     (unless (looking-at-p comint-prompt-regexp)
       (re-search-backward comint-prompt-regexp))
     (comint-skip-prompt)
-    (when-let* ((start (point))
-                (end (save-excursion
-                       (if (re-search-forward comint-prompt-regexp nil t)
-                           (match-beginning 0)
-                         (point-max)))))
+    (and-let* ((start (point))
+               (end (save-excursion
+                      (if (re-search-forward comint-prompt-regexp nil t)
+                          (match-beginning 0)
+                        (point-max)))))
       (string-trim (buffer-substring start end)))))
 
 (defun shell-maker--json-encode (obj)
