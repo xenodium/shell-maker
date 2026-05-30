@@ -1460,13 +1460,18 @@ the window snapping back to the bottom while the user is reading."
       (cons parsed
             (string-trim remaining)))))
 
-(defun shell-maker--command-and-response-at-point ()
-  "Extract the current command and response in buffer."
+(cl-defun shell-maker--command-and-response-at-point (&key (trimmed t))
+  "Extract the current command and response in buffer.
+
+When TRIMMED is non-nil (the default), surrounding whitespace is
+stripped from both command and response.  Pass nil to receive raw
+substrings — useful when the caller wants property-aware trimming."
   (save-excursion
     (save-restriction
       (shell-maker-narrow-to-prompt)
       (let ((items (shell-maker--extract-history
-                    (shell-maker-prompt shell-maker--config))))
+                    (shell-maker-prompt shell-maker--config)
+                    :trimmed trimmed)))
         (cl-assert (or (seq-empty-p items)
                        (eq (length items) 1)))
         (seq-first items)))))
@@ -1585,10 +1590,13 @@ the window snapping back to the bottom while the user is reading."
             execute-command)))
   (goto-char (point-max)))
 
-(defun shell-maker-next-command-and-response (&optional backwards)
+(cl-defun shell-maker-next-command-and-response (&optional backwards &key (trimmed t))
   "Move to next prompt and return interaction.  Return a command/response cons.
 
-If BACKWARDS is non-nil, move backwards."
+If BACKWARDS is non-nil, move backwards.
+When TRIMMED is non-nil (the default), surrounding whitespace is
+stripped from both command and response.  Pass nil to receive raw
+substrings — useful when the caller wants property-aware trimming."
   (when-let* ((point-before (point))
               (point-after (save-excursion
                              (comint-previous-prompt (if backwards 1 -1))
@@ -1607,7 +1615,7 @@ If BACKWARDS is non-nil, move backwards."
                           (not (eq (line-number-at-pos point-before)
                                    (line-number-at-pos point-after))))))
     (goto-char point-after)
-    (shell-maker--command-and-response-at-point)))
+    (shell-maker--command-and-response-at-point :trimmed trimmed)))
 
 (defun shell-maker-history-position ()
   "Return position in history as alist with :current and :total.
@@ -1658,7 +1666,7 @@ Returns nil when there is no history."
    (append (shell-maker-history)
            items)))
 
-(cl-defun shell-maker--extract-history (prompt-regexp &key (propertized t))
+(cl-defun shell-maker--extract-history (prompt-regexp &key (propertized t) (trimmed t))
   "Extract command/response history by walking the current buffer.
 
 Walks the buffer with `re-search-forward' to find prompt boundaries,
@@ -1668,6 +1676,12 @@ When PROPERTIZED is non-nil (the default), use text property checks
 to distinguish real prompts and markers from identical text in LLM
 responses.  Set to nil for transcript files where properties are
 not available.
+
+When TRIMMED is non-nil (the default), surrounding whitespace is
+stripped from each command and response via `string-trim'.  Pass nil
+to receive the raw substrings — useful when the caller wants to
+apply a smarter, property-aware trim in its own layer (e.g. so
+display-only padding embedded by a custom renderer survives).
 
 Returns a list of (command . response) cons.
 
@@ -1706,17 +1720,15 @@ In a buffer with:
                                     "<shell-maker-interrupted-command>" next-prompt
                                     :propertized propertized)))
           ;; Keep exchange unless failed (interrupted commands are kept).
-          (when-let (((and end-marker
-                           (or (not failed-marker)
-                               interrupted-marker)))
-                     (command (string-trim
-                               (buffer-substring
-                                command-start (car end-marker))))
-                     (response (string-trim
-                                (buffer-substring
-                                 (cdr end-marker) next-prompt)))
-                     ((not (and (string-empty-p command)
-                                (string-empty-p response)))))
+          (when-let* (((and end-marker
+                            (or (not failed-marker)
+                                interrupted-marker)))
+                      (raw-command (buffer-substring command-start (car end-marker)))
+                      (raw-response (buffer-substring (cdr end-marker) next-prompt))
+                      (command (if trimmed (string-trim raw-command) raw-command))
+                      (response (if trimmed (string-trim raw-response) raw-response))
+                      ((not (and (string-empty-p command)
+                                 (string-empty-p response)))))
             (push (cons (unless (string-empty-p command)
                           command)
                         (unless (string-empty-p response)
