@@ -1794,15 +1794,35 @@ replaying a session outside the normal input path).
 
 The marker is invisible to the user unless
 `shell-maker--show-invisible-markers' or `shell-maker-logging' is
-enabled."
-  (shell-maker--output-filter
-   (shell-maker--process)
-   (if shell-maker-logging
-       (propertize "<shell-maker-end-of-prompt>"
-                   'shell-maker--marker t)
-     (propertize "<shell-maker-end-of-prompt>"
-                 'shell-maker--marker t
-                 'invisible (not shell-maker--show-invisible-markers)))))
+enabled.
+
+Inserts directly at `point-max' rather than via the output
+filter so the prompt-detection side effects (which strip
+`comint-highlight-prompt' from `comint-last-prompt' and reassign
+it to whatever the current line matches) don't affect replayed
+or surrounding prompts."
+  (let* ((process (shell-maker--process))
+         (buffer (process-buffer process))
+         (marker (if shell-maker-logging
+                     (propertize "<shell-maker-end-of-prompt>"
+                                 'shell-maker--marker t
+                                 'field 'output
+                                 'read-only t
+                                 'front-sticky '(read-only)
+                                 'rear-nonsticky '(field read-only))
+                   (propertize "<shell-maker-end-of-prompt>"
+                               'shell-maker--marker t
+                               'invisible (not shell-maker--show-invisible-markers)
+                               'field 'output
+                               'read-only t
+                               'front-sticky '(read-only)
+                               'rear-nonsticky '(field read-only)))))
+    (with-current-buffer buffer
+      (let ((inhibit-read-only t))
+        (save-excursion
+          (goto-char (point-max))
+          (insert marker)
+          (set-marker (process-mark process) (point)))))))
 
 (defun shell-maker--output-filter (process string)
   "Copy of `comint-output-filter' but avoids fontifying non-prompt text.
