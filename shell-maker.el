@@ -1817,11 +1817,14 @@ or surrounding prompts."
                                'front-sticky '(read-only)
                                'rear-nonsticky '(field read-only)))))
     (with-current-buffer buffer
-      (let ((inhibit-read-only t))
+      (let ((inhibit-read-only t)
+            (auto-scroll (shell-maker--should-auto-scroll-p)))
         (save-excursion
           (goto-char (point-max))
           (insert marker)
-          (set-marker (process-mark process) (point)))))))
+          (set-marker (process-mark process) (point)))
+        (when auto-scroll
+          (goto-char (point-max)))))))
 
 (defun shell-maker--output-filter (process string)
   "Copy of `comint-output-filter' but avoids fontifying non-prompt text.
