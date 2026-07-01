@@ -835,8 +835,8 @@ Before: | Name | Role |       After: │ Name  │ Role     │
 (defun markdown-overlays--fontify-tables (tables)
   "Align all markdown TABLES using display overlays.
 Uses a content-based cache to skip reprocessing unchanged tables."
-  (when-let (((and markdown-overlays-prettify-tables tables))
-             (new-cache (make-hash-table :test 'equal)))
+  (when-let* (((and markdown-overlays-prettify-tables tables))
+              (new-cache (make-hash-table :test 'equal)))
     (dolist (table tables)
       (let ((key (buffer-substring-no-properties (map-elt table :start)
                                                  (map-elt table :end))))

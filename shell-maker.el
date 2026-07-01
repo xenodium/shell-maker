@@ -1187,9 +1187,9 @@ ERROR-CALLBACK accordingly."
                                   output
                                 (funcall extract-response output))
                               nil)
-                   (if-let ((error (if (string-empty-p (string-trim output))
-                                       output
-                                     (funcall extract-response output))))
+                   (if-let* ((error (if (string-empty-p (string-trim output))
+                                        output
+                                      (funcall extract-response output))))
                        (funcall error-callback error)
                      (funcall error-callback output)))))
            (kill-buffer output-buffer)
@@ -1377,10 +1377,10 @@ For example, with prompt at positions 100-113:
   (shell-maker--clip-output-range 50 200) => ((:start . 50) (:end . 100))
   (shell-maker--clip-output-range 50 80)  => ((:start . 50) (:end . 80))
   (shell-maker--clip-output-range 50 50)  => nil"
-  (when-let ((prompt-start (and comint-last-prompt
-                               (marker-position (car comint-last-prompt))))
-             (prompt-end (marker-position (cdr comint-last-prompt)))
-             ((< prompt-start prompt-end)))
+  (when-let* ((prompt-start (and comint-last-prompt
+                                 (marker-position (car comint-last-prompt))))
+              (prompt-end (marker-position (cdr comint-last-prompt)))
+              ((< prompt-start prompt-end)))
     (setq end (min end prompt-start)))
   (when (< start end)
     (list (cons :start start)
@@ -1424,10 +1424,10 @@ the window snapping back to the bottom while the user is reading."
            (when (and proc (> point (process-mark proc)))
              (set-marker (process-mark proc) point))
            (setq new-location point))))
-     (when-let (((not comint-use-prompt-regexp))
-                (safe-range (shell-maker--clip-output-range
-                             (marker-position comint-last-output-start)
-                             new-location)))
+     (when-let* (((not comint-use-prompt-regexp))
+                 (safe-range (shell-maker--clip-output-range
+                              (marker-position comint-last-output-start)
+                              new-location)))
        (with-silent-modifications
          (add-text-properties (map-elt safe-range :start) (map-elt safe-range :end)
                               `(read-only t
@@ -1451,7 +1451,7 @@ the window snapping back to the bottom while the user is reading."
       (insert json)
       (goto-char (point-min))
       (setq loc (point))
-      (while (when-let
+      (while (when-let*
                  ((data (ignore-errors (json-read))))
                (setq parsed (append parsed (list data)))
                (setq loc (point))))
@@ -1514,11 +1514,11 @@ substrings — useful when the caller wants property-aware trimming."
           (insert content)
           (write-file path nil))
         (set-buffer-modified-p nil))
-    (when-let ((path (read-file-name "Write file: "
-				     (when shell-maker-transcript-default-path
-                                       (file-name-as-directory shell-maker-transcript-default-path))
-				     nil nil (funcall shell-maker-transcript-default-filename)))
-               (content (buffer-string)))
+    (when-let* ((path (read-file-name "Write file: "
+				      (when shell-maker-transcript-default-path
+                                        (file-name-as-directory shell-maker-transcript-default-path))
+				      nil nil (funcall shell-maker-transcript-default-filename)))
+                (content (buffer-string)))
       (with-temp-buffer
         (insert content)
         (write-file path t))
@@ -1830,7 +1830,7 @@ or surrounding prompts."
   "Copy of `comint-output-filter' but avoids fontifying non-prompt text.
 
 Uses PROCESS and STRING same as `comint-output-filter'."
-  (when-let ((oprocbuf (process-buffer process)))
+  (when-let* ((oprocbuf (process-buffer process)))
     (with-current-buffer oprocbuf
       (let ((inhibit-read-only t))
         (save-restriction
@@ -1840,10 +1840,10 @@ Uses PROCESS and STRING same as `comint-output-filter'."
           (insert string)
           (set-marker (process-mark process) (point))
           (goto-char (process-mark process))
-          (when-let (((not comint-use-prompt-regexp))
-                     (safe-range (shell-maker--clip-output-range
-                                  (marker-position comint-last-output-start)
-                                  (point))))
+          (when-let* (((not comint-use-prompt-regexp))
+                      (safe-range (shell-maker--clip-output-range
+                                   (marker-position comint-last-output-start)
+                                   (point))))
             (with-silent-modifications
               (add-text-properties (map-elt safe-range :start) (map-elt safe-range :end)
                                    `(read-only t
@@ -2217,19 +2217,19 @@ Of the form:
               (cons :buffer shell-buffer)
               (cons :write-output (lambda (output &optional force)
                                     (setq output (or output "<nil-message>"))
-                                    (when-let ((active (or force
-                                                           (and (eq request-id (with-current-buffer shell-buffer
-                                                                                 (shell-maker--current-request-id)))
-                                                                (buffer-live-p shell-buffer)))))
+                                    (when-let* ((active (or force
+                                                            (and (eq request-id (with-current-buffer shell-buffer
+                                                                                  (shell-maker--current-request-id)))
+                                                                 (buffer-live-p shell-buffer)))))
                                       (with-current-buffer shell-buffer
                                         (shell-maker-write-output :config config
                                                                   :output output
                                                                   :on-output on-output)))
                                     (setq full-output (concat full-output output))))
               (cons :finish-output (lambda (success)
-                                     (when-let ((active (and (buffer-live-p shell-buffer)
-                                                             (eq request-id (with-current-buffer shell-buffer
-                                                                              (shell-maker--current-request-id))))))
+                                     (when-let* ((active (and (buffer-live-p shell-buffer)
+                                                              (eq request-id (with-current-buffer shell-buffer
+                                                                               (shell-maker--current-request-id))))))
                                        (with-current-buffer shell-buffer
                                          (shell-maker-finish-output :config config
                                                                     :success success
