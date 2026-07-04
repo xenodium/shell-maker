@@ -285,19 +285,25 @@ For example \"elisp\" -> \"emacs-lisp\"."
   "Fontify a source block.
 Use QUOTES1-START QUOTES1-END LANG LANG-START LANG-END BODY-START
  BODY-END QUOTES2-START and QUOTES2-END."
-  ;; Overlay beginning "```" with a copy block button.
-  (markdown-overlays--put
-   (make-overlay quotes1-start quotes1-end)
-   'evaporate t
-   'markdown-overlays-markup-type 'fence
-   'display
-   (propertize "📋 "
-               'pointer 'hand
-               'keymap (markdown-overlays--make-ret-binding-map
-                        (lambda ()
-                          (interactive)
-                          (kill-ring-save body-start body-end)
-                          (message "Copied")))))
+  ;; Overlay beginning "```" with a copy block button.  Capture the body
+  ;; bounds as markers, not the raw integers: the button's closure outlives
+  ;; this call, and if the buffer is edited afterwards (a client streaming or
+  ;; re-rendering around the block) plain integers go stale and the button
+  ;; copies a shifted, truncated range.  Markers track the edits.
+  (let ((body-start (copy-marker body-start))
+        (body-end (copy-marker body-end t)))
+    (markdown-overlays--put
+     (make-overlay quotes1-start quotes1-end)
+     'evaporate t
+     'markdown-overlays-markup-type 'fence
+     'display
+     (propertize "📋 "
+                 'pointer 'hand
+                 'keymap (markdown-overlays--make-ret-binding-map
+                          (lambda ()
+                            (interactive)
+                            (kill-ring-save body-start body-end)
+                            (message "Copied"))))))
   ;; Hide end "```" altogether.
   (markdown-overlays--put
    (make-overlay quotes2-start quotes2-end)
