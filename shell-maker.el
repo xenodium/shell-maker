@@ -345,6 +345,26 @@ Use ON-OUTPUT function to monitor output text."
   (when on-output
     (funcall on-output reply)))
 
+(defun shell-maker--freeze-submitted-input ()
+  "Make the just-submitted input read-only.
+
+Meant to run right after `comint-send-input', while
+`comint-last-input-start' and `comint-last-input-end' still bracket the
+input that was just committed.
+
+`front-sticky' blocks inserting immediately before the input; keeping
+`read-only' out of `rear-nonsticky' (rear-sticky, the default) blocks
+appending immediately after it.  This mirrors the read-only output
+shell-maker already inserts, so a submitted prompt becomes as immutable
+as the agent's reply.  The live prompt stays editable independently, via
+the prompt marker's own `rear-nonsticky' (see `shell-maker--output-filter')."
+  (when (and comint-last-input-start comint-last-input-end
+             (< (marker-position comint-last-input-start)
+                (marker-position comint-last-input-end)))
+    (let ((inhibit-read-only t))
+      (add-text-properties comint-last-input-start comint-last-input-end
+                           '(read-only t front-sticky (read-only))))))
+
 (cl-defun shell-maker-submit (&key input on-output on-finished)
   "Submit current input.
 
@@ -377,6 +397,7 @@ Of the form:
         (goto-char (point-max))
         (insert input)))
     (comint-send-input) ;; Sets shell-maker--input
+    (shell-maker--freeze-submitted-input)
     (when (shell-maker--clear-input-for-execution :input shell-maker--input
                                                   :on-output on-output)
       (if called-interactively
