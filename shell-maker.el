@@ -1409,17 +1409,19 @@ For example, with prompt at positions 100-113:
 
 (defun shell-maker--should-auto-scroll-p ()
   "Return t when streaming should auto-scroll the buffer to point-max.
-True when point is at end-of-buffer AND every window displaying the
-buffer has its visible end at point-max. Wheel-scrolling moves
-window-end without moving point, so checking only `eobp' would keep
-the window snapping back to the bottom while the user is reading."
+True when point is at end-of-buffer AND end-of-buffer is visible in
+every window displaying the buffer. Wheel-scrolling moves the window
+without moving point, so checking only `eobp' would keep the window
+snapping back to the bottom while the user is reading.
+
+Visibility is asked of redisplay via `pos-visible-in-window-p' rather
+than compared against `window-end', whose value can land one position
+short of point-max at a trailing-newline end-of-buffer, silently
+disarming auto-scroll while the user is in fact at the bottom."
   (and (eobp)
-       (let ((windows (cl-remove-if-not
-                       (lambda (w) (eq (window-buffer w) (current-buffer)))
-                       (window-list nil 'no-mini))))
-         (or (null windows)
-             (cl-every (lambda (w) (>= (window-end w t) (point-max)))
-                       windows)))))
+       (cl-every (lambda (window)
+                   (pos-visible-in-window-p (point-max) window))
+                 (get-buffer-window-list nil 'no-mini))))
 
 (defmacro shell-maker-with-auto-scroll-edit (&rest body)
   "Execute BODY, preserving point unless already at end of buffer."
