@@ -4,7 +4,7 @@
 
 ;; Author: Alvaro Ramirez https://xenodium.com
 ;; URL: https://github.com/xenodium/shell-maker
-;; Version: 0.93.5
+;; Version: 0.94.1
 ;; Package-Requires: ((emacs "27.1"))
 
 ;; This package is free software; you can redistribute it and/or modify
@@ -32,7 +32,7 @@
 
 ;;; Code:
 
-(defconst shell-maker-version "0.93.5")
+(defconst shell-maker-version "0.94.1")
 
 (require 'comint)
 (require 'goto-addr)
@@ -160,7 +160,8 @@ or an absolute path like \"/usr/local/bin/curl\"."
   "<remap> <save-buffer>" #'shell-maker-save-session-transcript
   "C-M-h" #'shell-maker-mark-output)
 
-(defun shell-maker-start (config &optional no-focus welcome-function new-session buffer-name mode-line-name)
+(cl-defun shell-maker-start-v2 (&key config no-focus welcome-function new-session
+                                     buffer-name mode-line-name (alias-commands t))
   "Start a shell with CONFIG.
 
 Specify NO-FOCUS if started shell should not be focused.
@@ -171,7 +172,12 @@ Set NEW-SESSION to start a new session.
 
 Set BUFFER-NAME to override the buffer name.
 
-Set MODE-LINE-NAME to override the mode line name."
+Set MODE-LINE-NAME to override the mode line name.
+
+When ALIAS-COMMANDS is non-nil (the default), define the namespaced
+shell commands (e.g. `NAMESPACE-shell-submit') as aliases.  Pass nil
+to skip this so the caller can define its own commands under those
+names without them being clobbered on every shell start."
   (shell-maker--with-temp-buffer-if new-session ;; Avoid picking up buffer-local vars from current buffer
     (let* ((old-point)
            (namespace (downcase (shell-maker-config-name config)))
@@ -188,17 +194,18 @@ Set MODE-LINE-NAME to override the mode line name."
       (when new-session
         (setq buffer-name (generate-new-buffer-name buffer-name)))
       ;; Alias with concrete shell symbols.
-      (fset (intern (concat namespace "-shell-clear-buffer")) #'shell-maker-clear-buffer)
-      (fset (intern (concat namespace "-shell-previous-input")) #'comint-previous-input)
-      (fset (intern (concat namespace "-shell-next-input")) #'comint-next-input)
-      (fset (intern (concat namespace "-shell-submit")) #'shell-maker-submit)
-      (fset (intern (concat namespace "-shell-save-session-transcript"))
-            #'shell-maker-save-session-transcript)
-      (fset (intern (concat namespace "-shell-search-history")) #'shell-maker-search-history)
-      (fset (intern (concat namespace "-shell-newline")) #'newline)
-      (fset (intern (concat namespace "-shell-rename-buffer")) #'shell-maker-rename-buffer)
-      (fset (intern (concat namespace "-shell-delete-interaction-at-point")) #'shell-maker-delete-interaction-at-point)
-      (fset (intern (concat namespace "-shell-restore-session-from-transcript")) #'shell-maker-restore-session-from-transcript)
+      (when alias-commands
+        (fset (intern (concat namespace "-shell-clear-buffer")) #'shell-maker-clear-buffer)
+        (fset (intern (concat namespace "-shell-previous-input")) #'comint-previous-input)
+        (fset (intern (concat namespace "-shell-next-input")) #'comint-next-input)
+        (fset (intern (concat namespace "-shell-submit")) #'shell-maker-submit)
+        (fset (intern (concat namespace "-shell-save-session-transcript"))
+              #'shell-maker-save-session-transcript)
+        (fset (intern (concat namespace "-shell-search-history")) #'shell-maker-search-history)
+        (fset (intern (concat namespace "-shell-newline")) #'newline)
+        (fset (intern (concat namespace "-shell-rename-buffer")) #'shell-maker-rename-buffer)
+        (fset (intern (concat namespace "-shell-delete-interaction-at-point")) #'shell-maker-delete-interaction-at-point)
+        (fset (intern (concat namespace "-shell-restore-session-from-transcript")) #'shell-maker-restore-session-from-transcript))
       (eval
        (macroexpand
         `(define-derived-mode ,(shell-maker-major-mode config) comint-mode
@@ -232,6 +239,19 @@ Set MODE-LINE-NAME to override the mode line name."
       (when old-point
         (push-mark old-point))
       (get-buffer buffer-name))))
+
+(defun shell-maker-start (config &optional no-focus welcome-function new-session buffer-name mode-line-name)
+  "Start a shell with CONFIG.
+
+Backward-compatible wrapper over `shell-maker-start-v2' (which also
+takes an ALIAS-COMMANDS keyword).  NO-FOCUS, WELCOME-FUNCTION,
+NEW-SESSION, BUFFER-NAME and MODE-LINE-NAME are as documented there."
+  (shell-maker-start-v2 :config config
+                        :no-focus no-focus
+                        :welcome-function welcome-function
+                        :new-session new-session
+                        :buffer-name buffer-name
+                        :mode-line-name mode-line-name))
 
 (defun shell-maker-define-major-mode (config &optional mode-map)
   "Define the major mode for the shell using CONFIG.
