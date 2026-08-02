@@ -1896,9 +1896,16 @@ Uses PROCESS and STRING same as `comint-output-filter'."
                                      inhibit-line-move-field-capture t))))
           (when-let* ((prompt-start (save-excursion (forward-line 0) (point)))
                       (inhibit-read-only t)
-                      (prompt (string-match
-                               comint-prompt-regexp
-                               (buffer-substring prompt-start (point)))))
+                      (line (buffer-substring prompt-start (point)))
+                      ((string-match comint-prompt-regexp line))
+                      ;; Bound the prompt to what actually matched, not the
+                      ;; whole line.  When a full `PROMPT> INPUT' turn is
+                      ;; rendered through this filter (e.g. a replayed or
+                      ;; echoed submission that never went through
+                      ;; `comint-send-input'), `(point)' sits past the user
+                      ;; input, so highlighting to `(point)' would paint the
+                      ;; input with `comint-highlight-prompt' too.
+                      (prompt-end (min (point) (+ prompt-start (match-end 0)))))
             (with-silent-modifications
               (or (= (point-min) prompt-start)
                   (get-text-property (1- prompt-start) 'read-only)
@@ -1913,8 +1920,8 @@ Uses PROCESS and STRING same as `comint-output-filter'."
                'font-lock-face
                'comint-highlight-prompt))
             (setq comint-last-prompt
-                  (cons (copy-marker prompt-start) (point-marker)))
-            (font-lock-append-text-property prompt-start (point)
+                  (cons (copy-marker prompt-start) (copy-marker prompt-end)))
+            (font-lock-append-text-property prompt-start prompt-end
                                             'font-lock-face
                                             'comint-highlight-prompt)
             (add-text-properties prompt-start (point)
