@@ -756,6 +756,9 @@ Return t if INPUT us cleared.  nil otherwise."
                                   (shell-maker-prompt shell-maker--config))
       (setq shell-maker--busy nil)
       (set-buffer-modified-p nil)
+      ;; `clear' bypasses `shell-maker-finish-output' but still brings the
+      ;; prompt back, so notify the same observers.
+      (run-hooks 'shell-maker-finish-output-hook)
       nil)
      ((string-equal "config" (string-trim input))
       (shell-maker--write-reply :config shell-maker--config
@@ -1385,6 +1388,14 @@ Use ON-OUTPUT function to monitor output text."
                                     :reply (or output "<nil-message>")
                                     :on-output on-output))
 
+(defvar shell-maker-finish-output-hook nil
+  "Hook run in the shell buffer after output finishes and the prompt returns.
+
+Run at the end of `shell-maker-finish-output' (every command completion,
+error and init) and after the built-in `clear' command brings the prompt
+back.  Use it to react once the buffer has settled, for example to
+re-apply overlays.")
+
 (cl-defun shell-maker-finish-output (&key config success on-output)
   "Finish output for CONFIG shell buffer.
 
@@ -1405,7 +1416,8 @@ Use ON-OUTPUT function to monitor output text."
     (when auto-scroll
       (goto-char (point-max))))
   (when success
-    (shell-maker--write-input-ring-history config)))
+    (shell-maker--write-input-ring-history config))
+  (run-hooks 'shell-maker-finish-output-hook))
 
 (defun shell-maker--clip-output-range (start end)
   "Clip START/END range so it does not extend into the prompt.
@@ -1430,8 +1442,8 @@ For example, with prompt at positions 100-113:
 (defun shell-maker--should-auto-scroll-p ()
   "Return t when streaming should auto-scroll the buffer to point-max.
 True when point is at end-of-buffer AND every window displaying the
-buffer has its visible end at point-max. Wheel-scrolling moves
-window-end without moving point, so checking only `eobp' would keep
+buffer has its visible end at point-max.  Wheel-scrolling moves
+`window-end' without moving point, so checking only `eobp' would keep
 the window snapping back to the bottom while the user is reading."
   (and (eobp)
        (let ((windows (cl-remove-if-not
@@ -1709,8 +1721,8 @@ Returns nil when there is no history."
 (cl-defun shell-maker--extract-history (prompt-regexp &key (propertized t) (trimmed t))
   "Extract command/response history by walking the current buffer.
 
-Walks the buffer with `re-search-forward' to find prompt boundaries,
-extracting each exchange as a small substring.
+Walks the buffer with `re-search-forward', finding prompt boundaries
+with PROMPT-REGEXP, extracting each exchange as a small substring.
 
 When PROPERTIZED is non-nil (the default), use text property checks
 to distinguish real prompts and markers from identical text in LLM
