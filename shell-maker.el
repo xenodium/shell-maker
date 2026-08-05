@@ -4,7 +4,7 @@
 
 ;; Author: Alvaro Ramirez https://xenodium.com
 ;; URL: https://github.com/xenodium/shell-maker
-;; Version: 0.93.5
+;; Version: 0.95.1
 ;; Package-Requires: ((emacs "27.1"))
 
 ;; This package is free software; you can redistribute it and/or modify
@@ -32,7 +32,7 @@
 
 ;;; Code:
 
-(defconst shell-maker-version "0.93.5")
+(defconst shell-maker-version "0.95.1")
 
 (require 'comint)
 (require 'goto-addr)
@@ -160,7 +160,8 @@ or an absolute path like \"/usr/local/bin/curl\"."
   "<remap> <save-buffer>" #'shell-maker-save-session-transcript
   "C-M-h" #'shell-maker-mark-output)
 
-(defun shell-maker-start (config &optional no-focus welcome-function new-session buffer-name mode-line-name)
+(cl-defun shell-maker-start-v2 (&key config no-focus welcome-function new-session
+                                     buffer-name mode-line-name (alias-commands t))
   "Start a shell with CONFIG.
 
 Specify NO-FOCUS if started shell should not be focused.
@@ -171,7 +172,12 @@ Set NEW-SESSION to start a new session.
 
 Set BUFFER-NAME to override the buffer name.
 
-Set MODE-LINE-NAME to override the mode line name."
+Set MODE-LINE-NAME to override the mode line name.
+
+When ALIAS-COMMANDS is non-nil (the default), define the namespaced
+shell commands (e.g. `NAMESPACE-shell-submit') as aliases.  Pass nil
+to skip this so the caller can define its own commands under those
+names without them being clobbered on every shell start."
   (shell-maker--with-temp-buffer-if new-session ;; Avoid picking up buffer-local vars from current buffer
     (let* ((old-point)
            (namespace (downcase (shell-maker-config-name config)))
@@ -188,17 +194,18 @@ Set MODE-LINE-NAME to override the mode line name."
       (when new-session
         (setq buffer-name (generate-new-buffer-name buffer-name)))
       ;; Alias with concrete shell symbols.
-      (fset (intern (concat namespace "-shell-clear-buffer")) #'shell-maker-clear-buffer)
-      (fset (intern (concat namespace "-shell-previous-input")) #'comint-previous-input)
-      (fset (intern (concat namespace "-shell-next-input")) #'comint-next-input)
-      (fset (intern (concat namespace "-shell-submit")) #'shell-maker-submit)
-      (fset (intern (concat namespace "-shell-save-session-transcript"))
-            #'shell-maker-save-session-transcript)
-      (fset (intern (concat namespace "-shell-search-history")) #'shell-maker-search-history)
-      (fset (intern (concat namespace "-shell-newline")) #'newline)
-      (fset (intern (concat namespace "-shell-rename-buffer")) #'shell-maker-rename-buffer)
-      (fset (intern (concat namespace "-shell-delete-interaction-at-point")) #'shell-maker-delete-interaction-at-point)
-      (fset (intern (concat namespace "-shell-restore-session-from-transcript")) #'shell-maker-restore-session-from-transcript)
+      (when alias-commands
+        (fset (intern (concat namespace "-shell-clear-buffer")) #'shell-maker-clear-buffer)
+        (fset (intern (concat namespace "-shell-previous-input")) #'comint-previous-input)
+        (fset (intern (concat namespace "-shell-next-input")) #'comint-next-input)
+        (fset (intern (concat namespace "-shell-submit")) #'shell-maker-submit)
+        (fset (intern (concat namespace "-shell-save-session-transcript"))
+              #'shell-maker-save-session-transcript)
+        (fset (intern (concat namespace "-shell-search-history")) #'shell-maker-search-history)
+        (fset (intern (concat namespace "-shell-newline")) #'newline)
+        (fset (intern (concat namespace "-shell-rename-buffer")) #'shell-maker-rename-buffer)
+        (fset (intern (concat namespace "-shell-delete-interaction-at-point")) #'shell-maker-delete-interaction-at-point)
+        (fset (intern (concat namespace "-shell-restore-session-from-transcript")) #'shell-maker-restore-session-from-transcript))
       (eval
        (macroexpand
         `(define-derived-mode ,(shell-maker-major-mode config) comint-mode
@@ -232,6 +239,19 @@ Set MODE-LINE-NAME to override the mode line name."
       (when old-point
         (push-mark old-point))
       (get-buffer buffer-name))))
+
+(defun shell-maker-start (config &optional no-focus welcome-function new-session buffer-name mode-line-name)
+  "Start a shell with CONFIG.
+
+Backward-compatible wrapper over `shell-maker-start-v2' (which also
+takes an ALIAS-COMMANDS keyword).  NO-FOCUS, WELCOME-FUNCTION,
+NEW-SESSION, BUFFER-NAME and MODE-LINE-NAME are as documented there."
+  (shell-maker-start-v2 :config config
+                        :no-focus no-focus
+                        :welcome-function welcome-function
+                        :new-session new-session
+                        :buffer-name buffer-name
+                        :mode-line-name mode-line-name))
 
 (defun shell-maker-define-major-mode (config &optional mode-map)
   "Define the major mode for the shell using CONFIG.
@@ -736,6 +756,9 @@ Return t if INPUT us cleared.  nil otherwise."
                                   (shell-maker-prompt shell-maker--config))
       (setq shell-maker--busy nil)
       (set-buffer-modified-p nil)
+      ;; `clear' bypasses `shell-maker-finish-output' but still brings the
+      ;; prompt back, so notify the same observers.
+      (run-hooks 'shell-maker-finish-output-hook)
       nil)
      ((string-equal "config" (string-trim input))
       (shell-maker--write-reply :config shell-maker--config
@@ -1365,6 +1388,14 @@ Use ON-OUTPUT function to monitor output text."
                                     :reply (or output "<nil-message>")
                                     :on-output on-output))
 
+(defvar shell-maker-finish-output-hook nil
+  "Hook run in the shell buffer after output finishes and the prompt returns.
+
+Run at the end of `shell-maker-finish-output' (every command completion,
+error and init) and after the built-in `clear' command brings the prompt
+back.  Use it to react once the buffer has settled, for example to
+re-apply overlays.")
+
 (cl-defun shell-maker-finish-output (&key config success on-output)
   "Finish output for CONFIG shell buffer.
 
@@ -1385,7 +1416,8 @@ Use ON-OUTPUT function to monitor output text."
     (when auto-scroll
       (goto-char (point-max))))
   (when success
-    (shell-maker--write-input-ring-history config)))
+    (shell-maker--write-input-ring-history config))
+  (run-hooks 'shell-maker-finish-output-hook))
 
 (defun shell-maker--clip-output-range (start end)
   "Clip START/END range so it does not extend into the prompt.
@@ -1410,7 +1442,7 @@ For example, with prompt at positions 100-113:
 (defun shell-maker--should-auto-scroll-p ()
   "Return t when streaming should auto-scroll the buffer to point-max.
 True when point is at end-of-buffer AND end-of-buffer is visible in
-every window displaying the buffer. Wheel-scrolling moves the window
+every window displaying the buffer.  Wheel-scrolling moves the window
 without moving point, so checking only `eobp' would keep the window
 snapping back to the bottom while the user is reading.
 
@@ -1691,8 +1723,8 @@ Returns nil when there is no history."
 (cl-defun shell-maker--extract-history (prompt-regexp &key (propertized t) (trimmed t))
   "Extract command/response history by walking the current buffer.
 
-Walks the buffer with `re-search-forward' to find prompt boundaries,
-extracting each exchange as a small substring.
+Walks the buffer with `re-search-forward', finding prompt boundaries
+with PROMPT-REGEXP, extracting each exchange as a small substring.
 
 When PROPERTIZED is non-nil (the default), use text property checks
 to distinguish real prompts and markers from identical text in LLM
@@ -1878,9 +1910,16 @@ Uses PROCESS and STRING same as `comint-output-filter'."
                                      inhibit-line-move-field-capture t))))
           (when-let* ((prompt-start (save-excursion (forward-line 0) (point)))
                       (inhibit-read-only t)
-                      (prompt (string-match
-                               comint-prompt-regexp
-                               (buffer-substring prompt-start (point)))))
+                      (line (buffer-substring prompt-start (point)))
+                      ((string-match comint-prompt-regexp line))
+                      ;; Bound the prompt to what actually matched, not the
+                      ;; whole line.  When a full `PROMPT> INPUT' turn is
+                      ;; rendered through this filter (e.g. a replayed or
+                      ;; echoed submission that never went through
+                      ;; `comint-send-input'), `(point)' sits past the user
+                      ;; input, so highlighting to `(point)' would paint the
+                      ;; input with `comint-highlight-prompt' too.
+                      (prompt-end (min (point) (+ prompt-start (match-end 0)))))
             (with-silent-modifications
               (or (= (point-min) prompt-start)
                   (get-text-property (1- prompt-start) 'read-only)
@@ -1895,8 +1934,8 @@ Uses PROCESS and STRING same as `comint-output-filter'."
                'font-lock-face
                'comint-highlight-prompt))
             (setq comint-last-prompt
-                  (cons (copy-marker prompt-start) (point-marker)))
-            (font-lock-append-text-property prompt-start (point)
+                  (cons (copy-marker prompt-start) (copy-marker prompt-end)))
+            (font-lock-append-text-property prompt-start prompt-end
                                             'font-lock-face
                                             'comint-highlight-prompt)
             (add-text-properties prompt-start (point)
