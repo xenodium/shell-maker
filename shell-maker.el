@@ -366,7 +366,7 @@ Use ON-OUTPUT function to monitor output text."
     (funcall on-output reply)))
 
 (defun shell-maker--freeze-submitted-input ()
-  "Make the just-submitted input read-only.
+  "Make the just-submitted input read-only and drop its hover highlight.
 
 Meant to run right after `comint-send-input', while
 `comint-last-input-start' and `comint-last-input-end' still bracket the
@@ -377,13 +377,20 @@ input that was just committed.
 appending immediately after it.  This mirrors the read-only output
 shell-maker already inserts, so a submitted prompt becomes as immutable
 as the agent's reply.  The live prompt stays editable independently, via
-the prompt marker's own `rear-nonsticky' (see `shell-maker--output-filter')."
+the prompt marker's own `rear-nonsticky' (see `shell-maker--output-filter').
+
+Also removes the `mouse-face'/`help-echo' comint adds so old input can
+be mouse-2 re-inserted: submitted prompts are immutable here, so the
+hover highlight (the `highlight' face, `:extend t', painting the whole
+line) is just noise."
   (when (and comint-last-input-start comint-last-input-end
              (< (marker-position comint-last-input-start)
                 (marker-position comint-last-input-end)))
     (let ((inhibit-read-only t))
       (add-text-properties comint-last-input-start comint-last-input-end
-                           '(read-only t front-sticky (read-only))))))
+                           '(read-only t front-sticky (read-only)))
+      (remove-text-properties comint-last-input-start comint-last-input-end
+                              '(mouse-face nil help-echo nil)))))
 
 (cl-defun shell-maker-submit (&key input on-output on-finished)
   "Submit current input.
