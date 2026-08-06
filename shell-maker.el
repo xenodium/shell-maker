@@ -756,6 +756,9 @@ Return t if INPUT us cleared.  nil otherwise."
       ;; TODO: output help to on-output also.
       (shell-maker--print-help)
       (setq shell-maker--busy nil)
+      ;; Reprints the prompt without `shell-maker-finish-output', so notify
+      ;; the same observers.
+      (run-hooks 'shell-maker-finish-output-hook)
       nil)
      ((string-equal "clear" (string-trim input))
       (call-interactively #'shell-maker-clear-buffer)
@@ -772,6 +775,9 @@ Return t if INPUT us cleared.  nil otherwise."
                                 :reply (shell-maker--dump-config shell-maker--config)
                                 :on-output on-output)
       (setq shell-maker--busy nil)
+      ;; Reprints the prompt without `shell-maker-finish-output', so notify
+      ;; the same observers.
+      (run-hooks 'shell-maker-finish-output-hook)
       nil)
      ((not (shell-maker--curl-version-supported))
       (shell-maker--write-reply :config shell-maker--config
@@ -779,6 +785,9 @@ Return t if INPUT us cleared.  nil otherwise."
                                 :failed t
                                 :on-output on-output)
       (setq shell-maker--busy nil)
+      ;; Reprints the prompt without `shell-maker-finish-output', so notify
+      ;; the same observers.
+      (run-hooks 'shell-maker-finish-output-hook)
       nil)
      ((and (shell-maker-config-validate-command
             shell-maker--config)
@@ -798,11 +807,17 @@ Return t if INPUT us cleared.  nil otherwise."
          :output error
          :success nil))
       (setq shell-maker--busy nil)
+      ;; Reprints the prompt without `shell-maker-finish-output', so notify
+      ;; the same observers.
+      (run-hooks 'shell-maker-finish-output-hook)
       nil)
      ((string-empty-p (string-trim input))
       (shell-maker--output-filter (shell-maker--process)
                                   (concat "\n" (shell-maker-prompt shell-maker--config)))
       (setq shell-maker--busy nil)
+      ;; Empty input reprints the prompt without going through
+      ;; `shell-maker-finish-output', so notify the same observers.
+      (run-hooks 'shell-maker-finish-output-hook)
       nil)
      (t
       t))))
