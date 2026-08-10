@@ -382,7 +382,13 @@ the prompt marker's own `rear-nonsticky' (see `shell-maker--output-filter').
 Also removes the `mouse-face'/`help-echo' comint adds so old input can
 be mouse-2 re-inserted: submitted prompts are immutable here, so the
 hover highlight (the `highlight' face, `:extend t', painting the whole
-line) is just noise."
+line) is just noise.
+
+Drops the undo history too.  Its entries describe the input that was
+just frozen, so undo could only fail on read-only text (or, once the
+reply pushes things around, delete the wrong text).  Only the live
+prompt is meant to be undoable.  Buffers with undo disabled
+(`buffer-disable-undo') are left alone."
   (when (and comint-last-input-start comint-last-input-end
              (< (marker-position comint-last-input-start)
                 (marker-position comint-last-input-end)))
@@ -390,7 +396,9 @@ line) is just noise."
       (add-text-properties comint-last-input-start comint-last-input-end
                            '(read-only t front-sticky (read-only)))
       (remove-text-properties comint-last-input-start comint-last-input-end
-                              '(mouse-face nil help-echo nil)))))
+                              '(mouse-face nil help-echo nil))))
+  (unless (eq buffer-undo-list t)
+    (setq buffer-undo-list nil)))
 
 (cl-defun shell-maker-submit (&key input on-output on-finished)
   "Submit current input.
@@ -1895,6 +1903,7 @@ or surrounding prompts."
                                'rear-nonsticky '(field read-only)))))
     (with-current-buffer buffer
       (let ((inhibit-read-only t)
+            (buffer-undo-list t)
             (auto-scroll (shell-maker--should-auto-scroll-p)))
         (save-excursion
           (goto-char (point-max))
@@ -1906,10 +1915,16 @@ or surrounding prompts."
 (defun shell-maker--output-filter (process string)
   "Copy of `comint-output-filter' but avoids fontifying non-prompt text.
 
-Uses PROCESS and STRING same as `comint-output-filter'."
+Uses PROCESS and STRING same as `comint-output-filter'.
+
+Output is read-only and never the user's to undo, so it's kept out of
+the undo history: recording it would put the shell's own writes ahead
+of whatever was typed at the live prompt, which is the only text undo
+should ever reach."
   (when-let* ((oprocbuf (process-buffer process)))
     (with-current-buffer oprocbuf
-      (let ((inhibit-read-only t))
+      (let ((inhibit-read-only t)
+            (buffer-undo-list t))
         (save-restriction
           (widen)
           (goto-char (point-max))
