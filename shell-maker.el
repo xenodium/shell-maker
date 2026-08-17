@@ -1884,7 +1884,13 @@ Inserts directly at `point-max' rather than via the output
 filter so the prompt-detection side effects (which strip
 `comint-highlight-prompt' from `comint-last-prompt' and reassign
 it to whatever the current line matches) don't affect replayed
-or surrounding prompts."
+or surrounding prompts.
+
+Advances the process mark to the delimiter's end, but never rewinds
+it.  A caller synthesizing history above a live prompt narrows to end
+before that prompt, so `point-max' here is the prompt's start: moving
+the mark there would make the `PROMPT> ' text part of the next
+submitted message."
   (let* ((process (shell-maker--process))
          (buffer (process-buffer process))
          (marker (if shell-maker-logging
@@ -1908,7 +1914,8 @@ or surrounding prompts."
         (save-excursion
           (goto-char (point-max))
           (insert marker)
-          (set-marker (process-mark process) (point)))
+          (when (> (point) (process-mark process))
+            (set-marker (process-mark process) (point))))
         (when auto-scroll
           (goto-char (point-max)))))))
 
