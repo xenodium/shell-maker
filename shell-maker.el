@@ -295,7 +295,6 @@ Optionally use MODE-MAP."
     (user-error "Not in a shell"))
   (setq-local shell-maker--config (copy-sequence config))
   (visual-line-mode +1)
-  (goto-address-mode +1)
   ;; Prevents fontifying streamed response as prompt.
   (setq comint-prompt-regexp
         (shell-maker-prompt-regexp config))
