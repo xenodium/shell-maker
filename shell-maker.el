@@ -35,7 +35,6 @@
 (defconst shell-maker-version "0.97.2")
 
 (require 'comint)
-(require 'goto-addr)
 (require 'json)
 (require 'map)
 (require 'seq)
