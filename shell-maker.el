@@ -571,14 +571,21 @@ Error if invoked from non-shell buffer."
   "Search forward for a real prompt matching PROMPT-REGEXP before BOUND.
 
 Skips matches in response content by verifying that the matched
-text has `comint-highlight-prompt' face."
-  (let (found)
+text has `comint-highlight-prompt' face.
+
+Like `re-search-forward', leave point unchanged when no prompt is
+found.  Without this, skipped lookalikes strand point on the last
+one searched."
+  (let ((start (point))
+        found)
     (while (and (not found)
                 (re-search-forward prompt-regexp bound t))
       (when (memq 'comint-highlight-prompt
                   (ensure-list
                    (get-text-property (match-beginning 0) 'font-lock-face)))
         (setq found t)))
+    (unless found
+      (goto-char start))
     found))
 
 (defun shell-maker-narrow-to-prompt ()
