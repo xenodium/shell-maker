@@ -464,13 +464,23 @@ Of the form:
   (interactive)
   (unless (eq major-mode (shell-maker-major-mode shell-maker--config))
     (user-error "Not in a shell"))
-  (let ((candidate (completing-read
-                    "History: "
-                    (delete-dups
-                     (seq-filter
-                      (lambda (item)
-                        (not (string-empty-p item)))
-                      (ring-elements comint-input-ring))) nil t)))
+  (let* ((items (delete-dups
+                 (seq-filter
+                  (lambda (item)
+                    (not (string-empty-p item)))
+                  (ring-elements comint-input-ring))))
+         (candidate (completing-read
+                     "History: "
+                     ;; `ring-elements' returns items newest first.  Say
+                     ;; so via completion metadata, otherwise completion
+                     ;; UIs apply their own sort (vertico, for example,
+                     ;; re-sorts by length and then alphabetically).
+                     (lambda (string pred action)
+                       (if (eq action 'metadata)
+                           '(metadata (display-sort-function . identity)
+                                      (cycle-sort-function . identity))
+                         (complete-with-action action items string pred)))
+                     nil t)))
     (delete-region (comint-line-beginning-position) (point-max))
     (insert candidate)))
 
