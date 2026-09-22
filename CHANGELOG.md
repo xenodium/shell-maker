@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Improved function naming and organization in markdown overlays
 - Moved defcustom declarations to top of file
 - Fallback to home directory when needed (fixes chatgpt-shell issue #326)
+- Cache `curl --version` result to avoid running it on every `shell-maker-submit` (issue #32)
 
 ### Fixed
 - Markdown overlays rendering issues
