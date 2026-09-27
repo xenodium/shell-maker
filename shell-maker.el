@@ -41,8 +41,9 @@
 (require 'shell)
 (require 'view)
 
+(require 'cl-lib)
+
 (eval-when-compile
-  (require 'cl-lib)
   (declare-function json-pretty-print "ext:json" (begin end &optional minimize)))
 
 (defcustom shell-maker-display-function #'pop-to-buffer-same-window
