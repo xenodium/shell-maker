@@ -34,6 +34,7 @@
 
 (defconst shell-maker-version "0.97.3")
 
+(require 'cl-lib)
 (require 'comint)
 (require 'json)
 (require 'map)
@@ -41,10 +42,7 @@
 (require 'shell)
 (require 'view)
 
-(require 'cl-lib)
-
-(eval-when-compile
-  (declare-function json-pretty-print "ext:json" (begin end &optional minimize)))
+(declare-function json-pretty-print "ext:json" (begin end &optional minimize))
 
 (defcustom shell-maker-display-function #'pop-to-buffer-same-window
   "Function to display the shell.  Set to `display-buffer' or custom function."
