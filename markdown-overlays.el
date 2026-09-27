@@ -42,6 +42,15 @@
 (require 'url-util)
 (require 'markdown-overlays-tables)
 
+(declare-function org-format-latex "org")
+(defvar org-preview-latex-image-directory)
+(defvar org-preview-latex-default-process)
+
+(defvar markdown-overlays-render-images t
+  "Whether or not to render inline images.
+When non-nil, markdown image syntax and bare image file paths are
+displayed as images.")
+
 (defcustom markdown-overlays-highlight-blocks t
   "Whether or not to highlight source blocks."
   :type 'boolean
@@ -912,11 +921,6 @@ For example:
                           (string-to-number (cdr match))))))))
 
 ;;; Images
-
-(defvar markdown-overlays-render-images t
-  "Whether or not to render inline images.
-When non-nil, markdown image syntax and bare image file paths are
-displayed as images.")
 
 (defvar markdown-overlays-image-max-width 0.4
   "Maximum width in pixels for inline images.
