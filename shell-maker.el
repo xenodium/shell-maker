@@ -1478,18 +1478,17 @@ than compared against `window-end', whose value can land one position
 short of point-max at a trailing-newline end-of-buffer, silently
 disarming auto-scroll while the user is in fact at the bottom."
   (and (eobp)
-       (cl-every (lambda (window)
-                   ;; Asked while narrowed, `pos-visible-in-window-p' can
-                   ;; signal `args-out-of-range': the window still shows the
-                   ;; whole buffer, so it answers about a position the
-                   ;; restriction puts out of reach.  A caller rendering
-                   ;; above the prompt narrows exactly that way, and the
-                   ;; signal would escape into whatever it was doing.  Read
-                   ;; a failure as not-visible, leaving point where the user
-                   ;; put it rather than snapping to the bottom.
-                   (ignore-errors
-                     (pos-visible-in-window-p (point-max) window)))
-                 (get-buffer-window-list nil 'no-mini))))
+       ;; Callers rendering above the prompt narrow, but the window
+       ;; still shows the whole buffer, so ask about its real end.
+       ;; Asked while narrowed, `pos-visible-in-window-p' can signal
+       ;; `args-out-of-range', and the jit-lock pass it runs fontifies
+       ;; the narrowed buffer, which hangs `visual-wrap-prefix-mode'
+       ;; (see agent-shell#842).
+       (save-restriction
+         (widen)
+         (cl-every (lambda (window)
+                     (pos-visible-in-window-p (point-max) window))
+                   (get-buffer-window-list nil 'no-mini)))))
 
 (defmacro shell-maker-with-auto-scroll-edit (&rest body)
   "Execute BODY, preserving point unless already at end of buffer."
