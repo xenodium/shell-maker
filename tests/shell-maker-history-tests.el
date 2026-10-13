@@ -136,6 +136,20 @@
       (should (equal (cdr (car result))
                      "Here is the code:\n<shell-maker-end-of-prompt>\nMore text after")))))
 
+(ert-deftest shell-maker-history-test-search-prompt-leaves-point-when-not-found ()
+  "Searching past prompt lookalikes should not move point when none is real."
+  (with-temp-buffer
+    (insert (shell-maker-history-test--prompt "Agent> ") "explain\n"
+            (shell-maker-history-test--marker "<shell-maker-end-of-prompt>")
+            "Here is a transcript excerpt:\n"
+            "Agent> hello\n"
+            "and the rest of the answer\n")
+    (goto-char (point-min))
+    (should (shell-maker--re-search-forward-prompt "^Agent> "))
+    (let ((pos (point)))
+      (should-not (shell-maker--re-search-forward-prompt "^Agent> "))
+      (should (= (point) pos)))))
+
 (provide 'shell-maker-history-tests)
 
 ;;; shell-maker-history-tests.el ends here
