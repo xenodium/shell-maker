@@ -4,7 +4,7 @@
 
 ;; Author: Alvaro Ramirez https://xenodium.com
 ;; URL: https://github.com/xenodium/shell-maker
-;; Version: 0.97.5
+;; Version: 0.97.6
 ;; Package-Requires: ((emacs "27.1"))
 
 ;; This package is free software; you can redistribute it and/or modify
@@ -32,7 +32,7 @@
 
 ;;; Code:
 
-(defconst shell-maker-version "0.97.5")
+(defconst shell-maker-version "0.97.6")
 
 (require 'cl-lib)
 (require 'comint)
@@ -489,31 +489,60 @@ Of the form:
 ;; Thanks to https://www.n16f.net/blog/making-ielm-more-comfortable
 (defun shell-maker--read-input-ring-history (config)
   "Read input ring history from file using CONFIG."
-  (let ((path (shell-maker-history-file-path config))
-        (ring))
+  (let ((path (shell-maker-history-file-path config)))
     (make-directory
      (file-name-directory path) t)
     (setq-local comint-input-ring-file-name nil)
     (setq-local comint-input-ignoredups t)
-    (setq ring (ignore-errors
-                 (with-temp-buffer
-                   (insert-file-contents path)
-                   (read (current-buffer)))))
-    (unless (ring-p ring)
-      (setq ring (make-ring (min 1500 comint-input-ring-size))))
-    (setq comint-input-ring ring)))
+    (setq comint-input-ring
+          (shell-maker--plain-input-ring
+           (ignore-errors
+             (with-temp-buffer
+               (let ((coding-system-for-read 'utf-8))
+                 (insert-file-contents path))
+               (read (current-buffer))))))))
 
 (defun shell-maker--write-input-ring-history (config)
   "Write input ring history to file using CONFIG."
   (let ((path (shell-maker-history-file-path config))
-        (ring comint-input-ring)
+        (ring (shell-maker--plain-input-ring comint-input-ring))
         (print-length nil)
-        (print-level nil))
+        (print-level nil)
+        (coding-system-for-write 'utf-8))
     (make-directory
      (file-name-directory path) t)
     (with-temp-file path
-      (insert (prin1-to-string (or ring
-                                   (make-ring (min 1500 comint-input-ring-size))))))))
+      (insert (prin1-to-string ring)))))
+
+(defun shell-maker--plain-input-ring (ring)
+  "Return a copy of RING holding only multibyte strings without properties.
+
+Text properties are dropped so byte-compiled closures (for example, from
+`cursor-sensor-functions') never reach the history file.  Unibyte
+entries, left behind by older history files read as raw bytes, are
+decoded as UTF-8.
+
+Returns an empty ring if RING is not a ring.
+
+For example, a ring with elements:
+
+  (#(\"open foo.md\" 5 11 (cursor-sensor-functions (...)))
+   \"\\346\\227\\245\\346\\234\\254\")
+
+yields a ring with elements:
+
+  (\"open foo.md\" \"日本\")"
+  (let ((plain (make-ring (if (ring-p ring)
+                              (ring-size ring)
+                            (min 1500 comint-input-ring-size)))))
+    (when (ring-p ring)
+      (seq-do (lambda (item)
+                (ring-insert plain (substring-no-properties
+                                    (if (multibyte-string-p item)
+                                        item
+                                      (decode-coding-string item 'utf-8)))))
+              (seq-filter #'stringp (reverse (ring-elements ring)))))
+    plain))
 
 (defun shell-maker-busy ()
   "Non-nil if shell is currently busy.

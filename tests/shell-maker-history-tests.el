@@ -136,6 +136,55 @@
       (should (equal (cdr (car result))
                      "Here is the code:\n<shell-maker-end-of-prompt>\nMore text after")))))
 
+;;; Input ring persistence
+
+(ert-deftest shell-maker-history-test-input-ring-round-trips-non-ascii ()
+  "Non-ASCII entries with closure properties survive a write/read cycle.
+See https://github.com/xenodium/shell-maker/issues/49"
+  (let ((shell-maker-root-path (file-name-as-directory (make-temp-file "sm" t)))
+        (config (make-shell-maker-config :name "Test"))
+        (link (propertize "/tmp/foo.md" 'cursor-sensor-functions
+                          (list (byte-compile
+                                 (lambda (_window _old dir)
+                                   (when (eq dir 'entered)
+                                     (message "entered"))))))))
+    (unwind-protect
+        (progn
+          (with-temp-buffer
+            (setq-local comint-input-ring (make-ring 10))
+            (ring-insert comint-input-ring "first")
+            (ring-insert comint-input-ring (concat "日本語 " link))
+            (shell-maker--write-input-ring-history config))
+          (with-temp-buffer
+            (set-buffer-multibyte nil)
+            (insert-file-contents-literally (shell-maker-history-file-path config))
+            (should (zerop (how-many (string 0) (point-min) (point-max)))))
+          (with-temp-buffer
+            (setq-local comint-input-ring nil)
+            (shell-maker--read-input-ring-history config)
+            (should (equal (ring-elements comint-input-ring)
+                           '("日本語 /tmp/foo.md" "first")))
+            (should-not (text-properties-at 0 (ring-ref comint-input-ring 0)))))
+      (delete-directory shell-maker-root-path t))))
+
+(ert-deftest shell-maker-history-test-input-ring-decodes-raw-byte-entries ()
+  "Entries already persisted as raw UTF-8 bytes are decoded on read."
+  (let ((shell-maker-root-path (file-name-as-directory (make-temp-file "sm" t)))
+        (config (make-shell-maker-config :name "Test"))
+        (ring (make-ring 10)))
+    (unwind-protect
+        (progn
+          (ring-insert ring (encode-coding-string "日本語" 'utf-8))
+          (make-directory (file-name-directory
+                           (shell-maker-history-file-path config)) t)
+          (with-temp-file (shell-maker-history-file-path config)
+            (insert (prin1-to-string ring)))
+          (with-temp-buffer
+            (setq-local comint-input-ring nil)
+            (shell-maker--read-input-ring-history config)
+            (should (equal (ring-ref comint-input-ring 0) "日本語"))))
+      (delete-directory shell-maker-root-path t))))
+
 (provide 'shell-maker-history-tests)
 
 ;;; shell-maker-history-tests.el ends here
