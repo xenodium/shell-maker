@@ -259,7 +259,7 @@ Optionally use MODE-MAP."
       (eval `(define-derived-mode ,(shell-maker-major-mode config) comint-mode
                ,(shell-maker-config-name config)
                ,(format "Major mode for %s shell." (shell-maker-config-name config))
-               (use-local-map ,mode-map)))
+               (use-local-map ',mode-map)))
     (let ((mode-map-symbol (intern (format "%s-shell-mode-map"
                                            (downcase (shell-maker-config-name config))))))
       (when (boundp mode-map-symbol)
