@@ -1495,6 +1495,10 @@ For example, with prompt at positions 100-113:
     (list (cons :start start)
           (cons :end end))))
 
+(defvar shell-maker-inhibit-auto-scroll nil
+  "Non-nil skips auto-scrolling during bulk buffer updates.
+Bind this while replaying history to avoid repeated window visibility checks.")
+
 (defun shell-maker--should-auto-scroll-p ()
   "Return t when streaming should auto-scroll the buffer to point-max.
 True when point is at end-of-buffer AND end-of-buffer is visible in
@@ -1502,11 +1506,14 @@ every window displaying the buffer.  Wheel-scrolling moves the window
 without moving point, so checking only `eobp' would keep the window
 snapping back to the bottom while the user is reading.
 
+Returns nil when `shell-maker-inhibit-auto-scroll' is non-nil.
+
 Visibility is asked of redisplay via `pos-visible-in-window-p' rather
 than compared against `window-end', whose value can land one position
 short of point-max at a trailing-newline end-of-buffer, silently
 disarming auto-scroll while the user is in fact at the bottom."
-  (and (eobp)
+  (and (not shell-maker-inhibit-auto-scroll)
+       (eobp)
        ;; Callers rendering above the prompt narrow, but the window
        ;; still shows the whole buffer, so ask about its real end.
        ;; Asked while narrowed, `pos-visible-in-window-p' can signal
