@@ -1497,7 +1497,8 @@ For example, with prompt at positions 100-113:
 
 (defvar shell-maker-inhibit-auto-scroll nil
   "Non-nil skips auto-scrolling during bulk buffer updates.
-Bind this while replaying history to avoid repeated window visibility checks.")
+Bind this around many consecutive insertions (for example, restoring
+a session's history) to avoid a window visibility check per insertion.")
 
 (defun shell-maker--should-auto-scroll-p ()
   "Return t when streaming should auto-scroll the buffer to point-max.
