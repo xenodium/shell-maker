@@ -344,8 +344,9 @@ Use QUOTES1-START QUOTES1-END LANG LANG-START LANG-END BODY-START
                  (let ((inhibit-modification-hooks nil)
                        (inhibit-message t))
                    (erase-buffer)
-                   ;; Additional space ensures property change.
-                   (insert string " ")
+                   ;; Trailing newline lets end-of-line keywords
+                   ;; (e.g. diff-mode's +/- lines) match the last line.
+                   (insert string "\n")
                    (funcall lang-mode)
                    (font-lock-ensure))
                  (buffer-string)))
