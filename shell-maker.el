@@ -2012,8 +2012,14 @@ should ever reach."
                                    (field inhibit-line-move-field-capture read-only font-lock-face)))))))))
 
 (defun shell-maker-buffer (config)
-  "Get buffer from CONFIG."
-  (get-buffer-create (shell-maker-buffer-name config)))
+  "Return the shell buffer for CONFIG.
+
+When already in a CONFIG shell, return the current buffer, so a
+shell renamed via `rename-buffer' (bypassing
+`shell-maker-set-buffer-name') still resolves to itself."
+  (if (and config (eq major-mode (shell-maker-major-mode config)))
+      (current-buffer)
+    (get-buffer-create (shell-maker-buffer-name config))))
 
 (defun shell-maker-buffer-name (config)
   "Get buffer name from CONFIG."
